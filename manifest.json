@@ -1,0 +1,21 @@
+{
+  "name": "CALLCINE",
+  "short_name": "CALLCINE",
+  "description": "Watch Together - Assista junto com seu amigo.",
+  "start_url": ".",
+  "display": "fullscreen",
+  "background_color": "#020b14",
+  "theme_color": "#020b14",
+  "icons": [
+    {
+      "src": "icone.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/Fundo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

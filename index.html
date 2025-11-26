@@ -1,0 +1,3503 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CALLCINE - Watch Together</title>
+
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#020b14">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <link rel="apple-touch-icon" href="/icons/icone.png">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        /* --- 1. VARIÁVEIS E RESET (TEMA DARK BLUE) --- */
+        :root {
+            --bg: #020b14;          /* Fundo Azul Muito Escuro */
+            --panel: #0a1525;       /* Painéis Azul Escuro */
+            --accent: #aaff00;      /* NOVO: Acento Verde-Limão Descontraído */
+            --accent-hover: #88cc00;
+            --text: #e0e6ed;        /* Texto Branco Gelo */
+            --glass: rgba(10, 21, 37, 0.95);
+            /* NOVO: Fundo do chat mais claro e transparente para sobreposição */
+            --chat-glass: rgba(10, 25, 40, 0.85);
+            --border: 1px solid rgba(170, 255, 0, 0.2); /* Borda em vez de ciano */
+            --success: #1dd1a1;
+            --horn: #ff9f43;        /* Laranja para o botão de alerta */
+            --danger: #ff6b6b;
+
+            /* --- MODIFICAÇÃO: TAMANHO DAS CÂMERAS LATERAL E MÓVEL --- */
+            --cam-strip-width: 300px; /* NOVO: Largura da tira de Câmeras na Lateral (Desktop) */
+            --cam-strip-height: 40dvh; /* MANTIDO: Altura na parte inferior (Mobile/Chat Ativo) */
+            /* ---------------------------------------------------- */
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; outline: none; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            background: var(--bg); color: var(--text);
+            height: 100vh; height: 100dvh; width: 100vw;
+            display: flex; 
+            flex-direction: column; /* PADRÃO: Layout vertical (Mobile first) */
+            overflow: hidden; overscroll-behavior: none;
+            transition: all 0.3s ease;
+        }
+        
+        /* --- NOVO: LAYOUT LATERAL (DESKTOP) --- */
+        @media (min-width: 900px) {
+            body:not(.chat-active) {
+                flex-direction: row; /* Muda para layout horizontal */
+            }
+            body:not(.chat-active) .stage-container {
+                flex: 1; /* Player ocupa o máximo de largura */
+                height: 100%; /* Ocupa a altura total */
+                border-bottom: none;
+                border-right: var(--border); /* Nova borda */
+            }
+            body:not(.chat-active) .interaction-container {
+                flex: none; /* Não cresce/diminui */
+                width: var(--cam-strip-width); /* Usa a nova largura */
+                height: 100%; /* Ocupa a altura total */
+                flex-direction: column; /* Câmeras verticalmente */
+                overflow: hidden;
+            }
+            body:not(.chat-active) .cams-dock {
+                flex: 1; /* Ocupa o espaço total vertical na lateral */
+                flex-direction: column; /* Câmeras em coluna */
+            }
+            body:not(.chat-active) .cam-box {
+                flex: 1; /* Cada câmera ocupa 50% da altura */
+                width: 100%;
+                border-bottom: 1px solid #111;
+            }
+            body:not(.chat-active) .custom-controls {
+                /* Controles do player ficam na parte de baixo do stage-container, mas aqui precisamos deixá-los na parte de baixo do player */
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                width: 100%;
+            }
+            
+            /* Ajusta a barra de URL para o modo lateral */
+            body:not(.chat-active) .url-overlay {
+                top: 70px !important; 
+                left: 50%;
+                transform: translateX(-50%);
+            }
+            
+            /* Ajusta o cabeçalho para o modo lateral */
+            body:not(.chat-active) header {
+                left: 0;
+                width: calc(100% - var(--cam-strip-width));
+            }
+        }
+        
+        /* --- FIM NOVO LAYOUT LATERAL (DESKTOP) --- */
+
+
+        /* ---------------------------------------------------- */
+        /* --- 2. LAYOUT PADRÃO (MODIFICADO - MOBILE FIRST) --- */
+        .stage-container {
+            /* flex: 1; -> REMOVIDO */
+            height: calc(100dvh - var(--cam-strip-height)); /* Player ocupa o que sobrar */
+            position: relative; background: #000; overflow: hidden;
+            border-bottom: var(--border); z-index: 1;
+        }
+        .interaction-container {
+            height: var(--cam-strip-height); /* Altura aumentada */
+            position: relative; background: #04090f;
+            display: flex; flex-direction: column; overflow: hidden; z-index: 2;
+            transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+        .cams-dock {
+            flex: 1; display: flex; padding: 2px; gap: 2px; background: #000;
+            overflow: hidden; position: relative; justify-content: center;
+        }
+        /* ---------------------------------------------------- */
+
+        /* --- 3. LAYOUT MODO CHAT ATIVO (MANTIDO E ADAPTADO) --- */
+
+        body.chat-active {
+            flex-direction: column; /* Força volta para coluna se chat ativo */
+        }
+        body.chat-active .stage-container {
+            position: relative; top: auto; left: auto; width: 100%; 
+            height: calc(100dvh - var(--cam-strip-height)); /* Ocupa o topo */
+            z-index: 1; flex: none; border-bottom: var(--border);
+        }
+        body.chat-active .interaction-container {
+            position: relative; top: auto; left: auto; width: 100%; 
+            height: var(--cam-strip-height); /* Ocupa a parte de baixo */
+            z-index: 2; background: #04090f; pointer-events: auto; flex: none; display: flex;
+        }
+        body.chat-active .cams-dock { 
+            display: flex; width: 100%; height: 100%; 
+            flex-direction: row; /* Câmeras lado a lado no mobile */
+        }
+        body.chat-active .cam-box { 
+            position: relative; flex: 1; height: 100%; width: auto; border: none; 
+            border-right: 1px solid #222; 
+        }
+
+        body.chat-active .custom-controls { display: flex !important; }
+        body.chat-active .url-overlay { display: none !important; pointer-events: none; }
+        body.chat-active header { 
+            display: flex !important; 
+            pointer-events: none; 
+            width: 100%; /* Ajusta a largura no modo chat ativo */
+        }
+
+        /* --- NOVO: ANIMAÇÃO DE TREMOR --- */
+        body.shake-screen {
+            animation: shake 0.3s cubic-bezier(.36,.07,.19,.97) both infinite;
+            transform: translate3d(0, 0, 0);
+            backface-visibility: hidden;
+            perspective: 1000px;
+        }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+        /* ---------------------------------------------------- */
+
+
+        /* ---------------------------------------------------- */
+        /* --- 4. ELEMENTOS GERAIS (MANTIDOS) --- */
+        .overlay-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: var(--bg); z-index: 20000; display: flex; justify-content: center; align-items: center; }
+        .login-box { background: var(--panel); padding: 40px; border-radius: 20px; text-align: center; border: var(--border); box-shadow: 0 10px 40px rgba(0,0,0,0.6); max-width: 90%; width: 350px; }
+        .login-logo { font-size: 2rem; font-weight: 900; letter-spacing: 2px; margin-bottom: 10px; color: white; }
+
+        header { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 60px; 
+            background: linear-gradient(to bottom, rgba(2, 11, 20, 0.95) 0%, transparent 100%); 
+            border-bottom: none; display: flex; align-items: center; justify-content: space-between; 
+            padding: 0 15px; z-index: 200; pointer-events: none; 
+            transition: transform 0.3s ease; 
+        }
+        header.hidden {
+            transform: translateY(-100%);
+            pointer-events: none;
+        }
+        header > div { pointer-events: auto; }
+
+        .user-profile { display: flex; align-items: center; justify: center; background: rgba(0,0,0,0.4); backdrop-filter: blur(5px); padding: 2px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.1); width: 40px; height: 40px; }
+        .user-avatar { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+
+        .btn-icon-wrapper { position: relative; display: inline-block; }
+
+        .btn-icon {
+            background: rgba(0,0,0,0.3); border: none; color: #a4b0be; font-size: 1.2rem; cursor: pointer;
+            width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s; border-radius: 50%; backdrop-filter: blur(4px);
+        }
+        .btn-icon:hover { color: var(--accent); background: rgba(170, 255, 0, 0.1); }
+        .btn-icon.blinking { animation: glow-blink 1s infinite alternate; background: rgba(170, 255, 0, 0.3); color: black; }
+        @keyframes glow-blink { from { box-shadow: 0 0 5px rgba(170, 255, 0, 0.2); } to { box-shadow: 0 0 15px rgba(170, 255, 0, 0.6); transform: scale(1.1); } }
+
+        .btn-icon i, .btn-round i, .btn-browser i, .btn-cam-ctrl i, .sfx-btn i {
+            color: #a4b0be; 
+            font-size: 1.2rem;
+            transition: color 0.2s;
+        }
+
+        .btn-icon:hover i {
+            color: var(--accent);
+        }
+
+        .btn-round.btn-search i, .start-btn i {
+             color: #000;
+        }
+
+        .btn-round i { font-size: 1rem; }
+
+        .badge-counter { position: absolute; top: -5px; right: -5px; background: var(--danger); color: white; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem; font-weight: bold; display: flex; align-items: center; justify-content: center; border: 2px solid var(--bg); opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+        .badge-counter.visible { opacity: 1; }
+
+        .url-overlay { position: absolute; top: -100px; left: 50%; transform: translateX(-50%); width: 95%; max-width: 650px; height: 50px; background: var(--glass); backdrop-filter: blur(12px); border: var(--border); border-radius: 50px; display: flex; align-items: center; padding: 0 5px; z-index: 250; box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition: top 0.4s ease; }
+        .url-overlay.visible { top: 70px; }
+        .input-round { flex: 1; min-width: 0; background: transparent; border: none; color: white; padding-left: 15px; font-size: 1rem; height: 100%; }
+        .btn-round { width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer; color: white; display: flex; justify-content: center; align-items: center; font-size: 1rem; transition: transform 0.2s; flex-shrink: 0; margin-left: 5px; }
+        .btn-add { background: #2f3640; }
+        .btn-search { background: var(--accent); color: #000; }
+        .btn-browser-mode { background: #3498db; }
+
+        .viewer-layer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; display: none; pointer-events: none; background: #000; z-index: 10; }
+        .viewer-layer.active { display: block; pointer-events: auto; z-index: 20; }
+        iframe { width: 100%; height: 100%; border: none; background: #000; }
+        #native-video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+        #placeholder-screen { 
+            display: flex; flex-direction: column; justify-content: center; align-items: center; 
+            height: 100%; color: #3d4a59; padding-top: 50px; background: #000; z-index: 5; 
+        }
+        #placeholder-screen.active { display: flex; z-index: 5; }
+        #placeholder-screen .placeholder-icon { font-size: 4rem; margin-bottom: 10px; width: 60px; height: 60px; } 
+
+        /* NOVO ESTILO: Para o texto de aviso */
+        .sync-warning {
+            text-align: center; 
+            margin-bottom: 30px; 
+            color: var(--horn); 
+            font-weight: bold; 
+            font-size: 1.1rem;
+            text-shadow: 0 0 5px rgba(255, 159, 67, 0.5);
+            line-height: 1.4;
+            letter-spacing: 0.5px;
+            padding: 0 20px;
+        }
+        .sync-warning strong {
+            color: var(--accent);
+            text-shadow: 0 0 8px rgba(170, 255, 0, 0.8);
+        }
+        /* FIM NOVO ESTILO */
+
+        /* CONTROLES PERSONALIZADOS */
+        .custom-controls { 
+            position: absolute; bottom: 0; left: 0; width: 100%; 
+            display: flex; flex-direction: column; align-items: center; 
+            background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); padding: 0; 
+            z-index: 80; border-top: 1px solid rgba(255,255,255,0.05); 
+            transform: translateY(0); 
+            transition: transform 0.3s ease;
+        }
+        .custom-controls.hidden {
+            transform: translateY(100%); 
+            pointer-events: none;
+        }
+
+        #progressBar { width: 100%; -webkit-appearance: none; height: 6px; background: rgba(255,255,255,0.1); outline: none; cursor: pointer; margin: 0; display: block; }
+        #progressBar::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); cursor: pointer; transition: transform 0.2s; margin-top: -3px; box-shadow: 0 0 10px var(--accent); }
+
+        .controls-wrapper { padding: 5px 15px 10px; width: 100%; display: flex; flex-direction: column; gap: 5px; }
+        .time-row { display: flex; justify-content: space-between; align-items: center; width: 100%; font-size: 0.75rem; color: #a4b0be; font-family: monospace; }
+        .manual-time-input { background: rgba(255,255,255,0.05); border: 1px solid #333; color: white; width: 80px; padding: 2px 5px; font-family: monospace; text-align: center; border-radius: 3px; }
+        .controls-row { display: flex; align-items: center; justify-content: center; gap: 20px; }
+
+        .btn-ctrl {
+            background: none;
+            border: none;
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 5px;
+            transition: color 0.2s;
+            flex-shrink: 0;
+            opacity: 0.8;
+        }
+
+        .btn-ctrl i {
+            color: #fff;
+            font-size: 1.2rem; 
+        }
+        .btn-ctrl:hover {
+            opacity: 1;
+        }
+        .btn-ctrl:hover i {
+            color: #ccc;
+        }
+
+        .btn-ctrl.main i {
+            font-size: 2.5rem; 
+            color: #fff;
+            text-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        .btn-ctrl.main:hover i {
+            color: #eee;
+            text-shadow: 0 0 5px rgba(0,0,0,0.8);
+        }
+
+        #btnReopenControls {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--glass);
+            border: var(--border);
+            color: var(--accent);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            z-index: 90; 
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        #btnReopenControls.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        #btnReopenControls:hover {
+            background: rgba(170, 255, 0, 0.1);
+        }
+        
+        #btnReopenHeader {
+            /* REMOVIDO: Este botão não será mais usado, pois a função foi integrada ao btnReopenControls */
+            display: none;
+        }
+        
+        /* NOVO: Ajusta a posição do botão de reabrir no modo lateral para a direita */
+        @media (min-width: 900px) {
+            body:not(.chat-active) #btnReopenControls {
+                right: calc(10px + var(--cam-strip-width));
+                bottom: 10px; /* Mantém a posição na parte inferior do player */
+            }
+        }
+        
+        #touch-overlay {
+            position: absolute;
+            top: 45px; 
+            left: 0;
+            width: 100%;
+            height: calc(100% - 45px);
+            z-index: 100; 
+            pointer-events: auto; 
+            background: transparent;
+        }
+
+
+        .cams-dock { flex: 1; display: flex; padding: 2px; gap: 2px; background: #000; overflow: hidden; position: relative; justify-content: center; }
+        .cam-box { flex: 1; background: #080f1a; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .waiting-friend { display: flex; flex-direction: column; align-items: center; gap: 10px; color: #57606f; position: absolute; width: 100%; height: 100%; justify-content: center; background: #04080f; z-index: 1; }
+        .spinner { width: 30px; height: 30px; border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .be-right-back { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; flex-direction: column; justify-content: center; align-items: center; color: #bbb; z-index: 5; }
+
+        .mute-overlay-text {
+            position: absolute; bottom: 15px; right: 15px;
+            background: rgba(0,0,0,0.6); color: var(--danger); padding: 12px; border-radius: 50%;
+            font-size: 1.5rem; font-weight: bold; pointer-events: none; display: none; z-index: 100;
+            backdrop-filter: blur(2px); border: 1px solid rgba(255,255,255,0.1);
+            animation: pulse-mute-icon 2s infinite;
+        }
+        .mute-overlay-text i { color: var(--danger); font-size: 1.8rem; } 
+
+        video.webcam { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); position: relative; z-index: 2; transition: transform 0.2s ease-out; }
+        video.webcam.hidden { opacity: 0; }
+        .no-mirror { transform: scaleX(1) !important; }
+        .screen-share-active { transform: scaleX(1) !important; object-fit: contain !important; background: #111; }
+
+        .label { position: absolute; bottom: 5px; left: 5px; background: rgba(0,0,0,0.6); padding: 2px 6px; border-radius: 4px; font-size: 0.6rem; color: #fff; z-index: 5; }
+        
+        .cam-overlay-controls { 
+            position: absolute; top: 5px; right: 5px; z-index: 10; display: flex; gap: 5px; 
+            align-items: center; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 20px; 
+            backdrop-filter: blur(2px);
+        }
+        .btn-cam-ctrl { 
+            width: 26px; height: 26px; border-radius: 50%; border: none; background: rgba(0,0,0,0.6); 
+            color: white; cursor: pointer; font-size: 0.8rem; transition: background 0.3s; 
+            display: flex; align-items: center; justify-content: center; 
+        }
+        .btn-cam-ctrl.off { background: var(--danger); }
+        .btn-cam-ctrl i { font-size: 0.9rem; color: #fff; } 
+        .btn-cam-ctrl.off i { color: #fff; }
+        
+        /* NOVO: Estilos para o botão de Zoom +/- */
+        .zoom-controls { display: flex; align-items: center; gap: 2px; }
+        .btn-zoom { 
+            width: 26px; height: 26px; border-radius: 50%; border: none; background: rgba(0,0,0,0.6); 
+            color: white; cursor: pointer; font-size: 0.8rem; transition: background 0.3s; 
+            display: flex; align-items: center; justify-content: center;
+        }
+        .btn-zoom:hover { background: rgba(0,0,0,0.8); color: var(--accent); }
+
+        .media-off-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; flex-direction: column; justify-content: center; align-items: center; color: #ddd; z-index: 3; font-size: 0.9rem; text-align: center; padding: 15px; }
+        .media-off-overlay i { font-size: 2rem; color: #ddd; margin-bottom: 10px; }
+
+        /* --- NOVO: BOTÃO DE CHAT NA CÂMERA DO AMIGO --- */
+        #remoteBox .btn-chat-remote {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            z-index: 10;
+            background: rgba(0,0,0,0.6);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: var(--accent);
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            backdrop-filter: blur(2px);
+        }
+        #remoteBox .btn-chat-remote:hover {
+            background: rgba(170, 255, 0, 0.1);
+        }
+        #remoteBox .btn-chat-remote i {
+            font-size: 1.1rem;
+            color: var(--accent);
+        }
+        /* ------------------------------------------- */
+
+        /* --- NOVO: BOTÃO DE ALERTA/BUZZER NA CÂMERA DO AMIGO --- */
+        #remoteBox .btn-alert-friend {
+            position: absolute;
+            top: 5px;
+            left: 5px; /* Posição à esquerda do botão de chat */
+            z-index: 10;
+            background: var(--horn); /* Laranja */
+            border: 1px solid var(--horn);
+            color: #000;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            backdrop-filter: blur(2px);
+            font-weight: bold;
+        }
+
+        #remoteBox .btn-alert-friend i {
+            font-size: 1.1rem;
+            color: #000;
+        }
+
+        #remoteBox .btn-alert-friend:active { transform: scale(0.9); }
+        #remoteBox .btn-alert-friend:hover { background: #ffbe76; border-color: #ffbe76; }
+        /* Adicionado estilo para quando está ativo (som tocando/tremor) */
+        #remoteBox .btn-alert-friend.playing { animation: pulse-alert 1s infinite; box-shadow: 0 0 10px rgba(255, 159, 67, 0.5); }
+        @keyframes pulse-alert { 
+            0% { box-shadow: 0 0 0 rgba(255, 159, 67, 0.4); }
+            50% { box-shadow: 0 0 15px rgba(255, 159, 67, 0.9); }
+            100% { box-shadow: 0 0 0 rgba(255, 159, 67, 0.4); }
+        }
+        /* ------------------------------------------- */
+
+
+        /* ---------------------------------------------------- */
+        /* --- 9. CHAT (MODIFICADO) --- */
+
+        #chatPanel {
+            position: fixed;
+            top: 50%; 
+            left: 50%;
+            transform: translate(-50%, -50%) scale(1);
+            width: 280px;
+            height: 250px;
+            min-width: 280px;
+            min-height: 250px;
+            max-width: 95vw;
+            max-height: 95vh;
+            background: var(--chat-glass);
+            border-radius: 12px; 
+            z-index: 6000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            border: none; 
+            box-shadow: 0 5px 30px rgba(0,0,0,0.7);
+            overflow: hidden;
+        }
+
+        #chatPanel.open {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .chat-header {
+            cursor: grab;
+            height: 40px;
+            background: rgba(0,0,0,0.3);
+            display: flex;
+            justify-content: flex-end; /* ALINHA TUDO PARA A DIREITA (NOVO) */
+            align-items: center;
+            padding: 0 10px;
+            border-bottom: none; 
+            flex-shrink: 0;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            color: #ccc;
+        }
+        
+        /* NOVO: Container para o botão de alerta e o título/ícone de arrastar */
+        .chat-header-left {
+            display: flex;
+            align-items: center;
+            /* REMOVIDO: O texto "CHAT" e o ícone de arraste */
+        }
+        
+        /* NOVO: Ícone de arrastar agora é só um ponteiro na área */
+        .chat-header .handle-icon { 
+            color: #aaa; 
+            font-size: 1.2rem;
+            margin-right: 5px;
+            cursor: grab; 
+            display: none; /* Escondido, a área inteira é dragable */
+        }
+
+        /* REMOVIDO: Estilo do botão de alerta movido para o header
+        .header-sfx-btn {
+            background: var(--horn);
+            border: 1px solid var(--horn);
+            color: #000;
+            padding: 5px 10px;
+            border-radius: 20px; 
+            cursor: pointer;
+            font-size: 0.8rem; 
+            font-weight: bold;
+            transition: all 0.2s; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            flex-shrink: 0;
+            margin-right: 10px;
+        }
+        .header-sfx-btn i { color: #000; font-size: 0.9rem; margin-right: 5px; }
+
+        .header-sfx-btn:active { transform: scale(0.9); }
+        .header-sfx-btn:hover { background: #ffbe76; border-color: #ffbe76; }
+        .header-sfx-btn.playing { animation: pulse-alert 1s infinite; box-shadow: 0 0 10px rgba(255, 159, 67, 0.5); }
+        */
+
+
+        /* NOVO: Estilo para o ícone de redimensionar */
+        .resize-handle i {
+            color: var(--accent);
+            font-size: 1.2rem;
+            position: absolute;
+            bottom: 0px; 
+            right: 0px; 
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        .resize-handle:hover i { opacity: 1; }
+
+        .resize-handle {
+            position: absolute;
+            width: 30px; 
+            height: 30px; 
+            bottom: 0; 
+            right: 0; 
+            z-index: 6001;
+            background: transparent;
+            cursor: nwse-resize; 
+        }
+        .handle-bl { width: 30px; height: 30px; bottom: 0; left: 0; cursor: nesw-resize; }  
+        .handle-tr { width: 30px; height: 30px; top: 0; right: 0; cursor: nesw-resize; }    
+        .handle-tl { width: 30px; height: 30px; top: 0; left: 0; cursor: nwse-resize; }     
+        
+        .resize-handle::after { content: none; }
+        
+
+        /* Impede a seleção de texto durante o arraste/redimensionamento */
+        body.is-dragging * { user-select: none; }
+
+
+        .chat-history {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            scroll-behavior: smooth;
+            background: transparent;
+            min-height: 0;
+            -webkit-mask-image: linear-gradient(to top, transparent 0%, black 10%, black 90%, transparent 100%);
+            mask-image: linear-gradient(to top, transparent 0%, black 10%, black 90%, transparent 100%);
+        }
+
+        .chat-controls-area {
+            padding: 5px 10px; /* REDUZIDO PADDING (NOVO) */
+            background: rgba(0,0,0,0.5);
+            border-top: var(--border);
+            flex-shrink: 0;
+            padding-bottom: max(5px, env(safe-area-inset-bottom)); /* REDUZIDO PADDING-BOTTOM (NOVO) */
+            border-bottom-left-radius: 12px;
+            border-bottom-right-radius: 12px;
+        }
+
+        /* REMOVIDO: A sfx-bar foi movida para o header */
+        /* .sfx-bar { display: flex; gap: 10px; justify-content: center; padding: 5px 0 12px 0; margin-bottom: 5px; white-space: nowrap; } */
+
+        /* REMOVIDO: O estilo sfx-btn não é mais necessário para a corneta no chat */
+        /* .sfx-btn { ... } */
+
+
+        .msg {
+            padding: 8px 14px;
+            border-radius: 16px; 
+            max-width: 85%;
+            font-size: 0.95rem;
+            word-wrap: break-word;
+            line-height: 1.4;
+            display: inline-block;
+            text-shadow: 0 1px 2px black;
+            position: relative;
+            backdrop-filter: blur(4px); 
+        }
+        .msg.me {
+            background: rgba(170, 255, 0, 0.2); 
+            align-self: flex-end;
+            color: var(--accent);
+            border: 1px solid rgba(170, 255, 0, 0.4);
+            border-bottom-right-radius: 4px; 
+        }
+        .msg.them {
+            background: rgba(26, 38, 57, 0.7); 
+            align-self: flex-start;
+            color: #dfe6e9;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-bottom-left-radius: 4px; 
+        }
+
+        .msn-sticker { width: 60px; height: 60px; vertical-align: middle; display: inline-block; margin: 2px; object-fit:contain; transition: transform 0.2s; }
+        .msn-sticker:hover { transform: scale(1.2); }
+        .msg.anim-emoji { background: transparent !important; border: none; padding: 0; box-shadow: none; }
+        .msg.anim-emoji .msn-sticker { width: 100px; height: 100px; }
+
+        .chat-input-row { 
+            display: flex; gap: 10px; align-items: center; background: #0f1926; 
+            padding: 5px 8px; /* REDUZIDO PADDING (NOVO) */
+            border-radius: 30px; border: var(--border); 
+            height: 45px; /* Altura FINA (NOVO) */
+        }
+        .input-full { flex: 1; background: transparent; border: none; color: white; font-size: 1rem; margin-left: 10px; min-width: 0; }
+        .btn-send { width: 35px; height: 35px; border-radius: 50%; background: var(--accent); border: none; color: #000; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; } /* BOTÃO MENOR (NOVO) */
+        .btn-send i { color: #000; font-size: 1rem; }
+
+        .side-panel { position: fixed; top: 0; bottom: 0; width: 320px; background: #0a1525; z-index: 7000; transition: transform 0.3s ease; display: flex; flex-direction: column; box-shadow: 0 0 50px rgba(0,0,0,0.8); border: var(--border); }
+        #playlistPanel { left: 0; transform: translateX(-100%); border-right: var(--border); }
+        #playlistPanel.open { transform: translateX(0); }
+        #settingsPanel { right: 0; transform: translateX(100%); border-left: var(--border); }
+        #settingsPanel.open { transform: translateX(0); }
+        .header-panel { height: 60px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-weight: 700; border-bottom: var(--border); background: rgba(0,0,0,0.2); }
+        
+        .btn-close-fixed { 
+            width: 36px; height: 36px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.1); 
+            background: rgba(0,0,0,0.5); color: white; cursor: pointer; display: flex; 
+            align-items: center; justify-content: center; transition: all 0.2s; 
+            box-shadow: 0 0 8px rgba(0,0,0,0.5);
+        }
+        .btn-close-fixed:hover { 
+            background: var(--danger); 
+            border-color: var(--danger);
+            transform: rotate(90deg);
+        }
+        .btn-close-fixed i { color: #fff; font-size: 1rem; transition: color 0.2s; }
+        .btn-close-fixed:hover i { color: #fff; }
+
+        .playlist-item { background: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; margin-bottom: 8px; display: grid; grid-template-columns: 50px 1fr 30px; gap: 10px; align-items: center; cursor: pointer; overflow: hidden; border: 1px solid transparent; transition: all 0.2s; }
+        .playlist-item:hover { background: rgba(255,255,255,0.08); }
+        .playlist-item.active { border: 1px solid var(--accent); background: rgba(170, 255, 0, 0.1); }
+        .pl-poster { width: 50px; height: 75px; object-fit: cover; border-radius: 4px; background: #000; }
+        .pl-content { min-width: 0; display:flex; flex-direction:column; justify-content:center; }
+        .pl-title { font-weight: bold; font-size: 0.9rem; color: #eee; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pl-meta { font-size: 0.75rem; color: #888; }
+        .pl-overview { font-size: 0.7rem; color: #aaa; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.2; }
+        .btn-pl-remove { background: transparent; border: none; color: #666; cursor: pointer; padding: 5px; height: 100%; }
+        .btn-pl-remove:hover { color: var(--danger); }
+        .btn-pl-remove i { color: #666; font-size: 1rem; }
+        .btn-pl-remove:hover i { color: var(--danger); }
+
+        .connect-row { display: flex; gap: 5px; margin-bottom: 20px; background: #1a2639; padding: 10px; border-radius: 8px; }
+        #friendIdInput { flex: 1; min-width: 0; font-size: 0.9rem; letter-spacing: 1px; height: 40px; border: 1px solid #333; background: #0b1420; color: var(--accent); border-radius: 4px; text-align: center; text-transform: uppercase; font-weight: bold; }
+        #btnConnect { width: auto; min-width: 80px; padding: 0 15px; background: var(--success); border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: #000; font-size: 0.8rem; }
+        #btnConnect:disabled { background: #555; cursor: not-allowed; opacity: 0.7; }
+        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 4999; display: none; backdrop-filter: blur(3px); }
+        #overlay.active { display: block; }
+
+        .browser-header { height: 45px; background: #f1f2f6; display: flex; padding: 0 10px; align-items: center; justify-content: space-between; border-bottom: 1px solid #ccc; }
+        .btn-browser { padding: 5px 12px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: 600; display:flex; align-items:center; gap:5px; color:#333; }
+        .btn-browser i { font-size: 0.8rem; color: #333; }
+        .adblock-btn { background: #27ae60; color: white; border: none; }
+        .adblock-btn:hover { background: #2ecc71; }
+        .adblock-btn.inactive { background: #c0392b; }
+        .adblock-btn i { color: white; }
+        /* REMOVIDO: Estilos do botão de compartilhamento de tela
+        .screenshare-btn { background: #8e44ad; color: white; border: none; }
+        .screenshare-btn:hover { background: #9b59b6; }
+        .screenshare-btn.active { background: var(--danger); animation: pulse-red 2s infinite; }
+        .screenshare-btn i { color: white; }
+        */
+
+        .start-btn { padding: 15px 40px; border-radius: 50px; border: none; font-weight: bold; cursor: pointer; background: var(--accent); color: #000; margin-top: 20px; font-size: 1rem; box-shadow: 0 0 20px rgba(170, 255, 0, 0.4); }
+        #toast { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); background: rgba(2, 11, 20, 0.95); color: var(--accent); padding: 8px 20px; border-radius: 4px; border: 1px solid var(--accent); z-index: 20000; display: none; font-size: 0.8rem; text-align: center; max-width: 80%; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        .save-friend-area { background: rgba(52, 152, 219, 0.1); border: 1px solid #3498db; padding: 10px; border-radius: 8px; margin-bottom: 20px; display: none; }
+
+        #msg-popup {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9);
+            background: var(--panel); color: white; padding: 15px 25px; border-radius: 10px;
+            font-size: 1.1rem; font-weight: bold; z-index: 21000;
+            opacity: 0; visibility: hidden; transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            box-shadow: 0 5px 30px rgba(0,0,0,0.7); max-width: 80%; text-align: center;
+            border: var(--border);
+        }
+        #msg-popup.show { opacity: 1; visibility: visible; transform: translate(-50%, -50%) scale(1); }
+        .msg-popup-btns {
+            margin-top: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+        }
+        .msg-popup-btn {
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            transition: transform 0.1s;
+        }
+        .msg-popup-btn:active {
+            transform: scale(0.95);
+        }
+        .msg-popup-btn.accept {
+            background: var(--success);
+            color: #000;
+        }
+        .msg-popup-btn.reject {
+            background: var(--danger);
+            color: #fff;
+        }
+
+
+        /* ---------------------------------------------------- */
+        /* OUTROS AJUSTES (MANTIDOS) */
+
+        /* Oculta os controles do dock quando o chat está aberto para que não fiquem por cima do balão (opcional) */
+        body:has(#chatPanel.open) .cams-dock .cam-overlay-controls {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        #btnReopenControls {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--glass);
+            border: var(--border);
+            color: var(--accent);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            z-index: 90; 
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        #btnReopenControls.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        #btnReopenControls:hover {
+            background: rgba(170, 255, 0, 0.1);
+        }
+        
+        #btnReopenHeader {
+            /* REMOVIDO */
+            display: none;
+        }
+        
+        /* NOVO: Ajusta a posição do botão de reabrir no modo lateral para a direita */
+        @media (min-width: 900px) {
+            body:not(.chat-active) #btnReopenControls {
+                right: calc(10px + var(--cam-strip-width));
+                bottom: 10px; /* Mantém a posição na parte inferior do player */
+            }
+        }
+        
+        #touch-overlay {
+            position: absolute;
+            top: 45px; 
+            left: 0;
+            width: 100%;
+            height: calc(100% - 45px);
+            z-index: 100; 
+            pointer-events: auto; 
+            background: transparent;
+        }
+
+
+        /* --- ESTILOS DA BIBLIOTECA (MANTIDOS) --- */
+        #libraryPanel {
+            left: 0; 
+            width: 100vw; 
+            transform: translateX(-100%); 
+            transition: transform 0.3s ease; 
+            border-right: var(--border);
+            display: flex; 
+            flex-direction: column; 
+            background: var(--bg);
+        }
+        #libraryPanel.open { transform: translateX(0); }
+
+        #libraryPanel .header-panel {
+            justify-content: center; 
+            border-bottom: none;
+            background: rgba(0,0,0,0.2);
+            position: relative;
+        }
+        #libraryPanel .header-panel .btn-close-fixed {
+            position: absolute; 
+            right: 10px;
+        }
+
+        .library-content {
+            overflow-y: auto;
+            flex: 1;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .library-header-content {
+            width: 95%; max-width: 1200px; display: flex; justify-content: center; 
+            align-items: center; margin-bottom: 20px; padding: 0 10px;
+        }
+        #libraryPanel .header-panel h2 { 
+            font-size: 1.5rem; letter-spacing: 2px;
+            color: var(--text); 
+        }
+
+        .library-filters {
+            display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;
+        }
+        .filter-btn {
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1);
+            color: #ccc; padding: 8px 16px; border-radius: 20px; cursor: pointer; transition: 0.3s;
+            font-weight: bold;
+        }
+        .filter-btn:hover, .filter-btn.active {
+            background: var(--accent); color: #000; font-weight: bold;
+        }
+
+        .movie-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 15px;
+            width: 95%; max-width: 1200px;
+            padding-bottom: 50px;
+        }
+
+        .movie-card {
+            position: relative; background: #1a2639; border-radius: 8px; overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s; cursor: pointer; border: 1px solid transparent;
+        }
+        .movie-card:hover {
+            transform: scale(1.05); z-index: 10;
+            box-shadow: 0 0 15px var(--accent);
+            border-color: var(--accent);
+        }
+
+        .movie-poster {
+            width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block;
+        }
+
+        .movie-info {
+            position: absolute; bottom: 0; left: 0; width: 100%;
+            background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+            padding: 10px 5px; opacity: 0; transition: 0.3s;
+        }
+        .movie-card:hover .movie-info { opacity: 1; }
+
+        .movie-title {
+            font-size: 0.8rem; font-weight: bold; color: #fff; text-align: center;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        
+        .btn-remove-friend { 
+            width: 70px; padding: 4px; background: var(--danger); border: none; 
+            color: white; border-radius: 4px; cursor: pointer; font-size: 0.75rem;
+            font-weight: bold; transition: opacity 0.2s;
+        }
+        .btn-remove-friend:hover {
+            opacity: 0.8;
+        }
+        .btn-remove-friend i { color: white; font-size: 0.75rem; margin-right: 3px; }
+    </style>
+
+    <script id="manifest-data" type="application/json">
+        {
+          "name": "CALLCINE",
+          "short_name": "CALLCINE",
+          "description": "Watch Together - Assista junto com seu amigo.",
+          "start_url": ".",
+          "display": "fullscreen",
+          "background_color": "#020b14",
+          "theme_color": "#020b14",
+          "icons": [
+            {"src": "icons/icone.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "icons/Fundo.png", "sizes": "512x512", "type": "image/png"}
+          ]
+        }
+    </script>
+</head>
+<body>
+
+    <div id="login-screen" class="overlay-screen">
+        <div class="login-box">
+            <div class="login-logo">CALL<span style="color:var(--accent)">CINE</span></div>
+            <p style="color:#a4b0be; margin-bottom:20px;">Watch Together</p>
+            <div id="g_id_onload" data-client_id="637437813670-k33ako3erkc9fj7c1p6i2jo98bqdbt1j.apps.googleusercontent.com" data-callback="handleCredentialResponse" data-auto_prompt="false" data-theme="filled_black"></div>
+            <div class="g_id_signin" data-type="standard" data-shape="pill" data-theme="filled_black" data-size="large"></div>
+            <p style="font-size:0.7rem; color:#57606f; margin-top:20px;">*Se o login não salvar, use Live Server.</p>
+        </div>
+    </div>
+
+    <div id="start-gate" class="overlay-screen" style="display:none; background:var(--bg);">
+        <div class="login-box" style="border:none; background:transparent; box-shadow:none;">
+            <img id="gateAvatar" src="" style="width:100px; height:100px; border-radius:50%; margin:0 auto 20px; display:block; border:3px solid #333;">
+            <div class="login-logo">BEM-VINDO</div>
+            <button class="start-btn" onclick="enterApp()">ENTRAR NA SESSÃO</button>
+        </div>
+    </div>
+
+    <div id="overlay" onclick="closeMenus()"></div>
+    <div id="toast">Notificação</div>
+
+    <div id="msg-popup">
+        <div id="popup-content"></div>
+        <div class="msg-popup-btns" id="popup-buttons"></div>
+    </div>
+    <header id="main-header">
+        <div style="display:flex; gap:10px;">
+            <button class="btn-icon" onclick="toggleMenu('playlist')">
+                 <i class="fa-solid fa-list-ul"></i>
+            </button>
+            <button class="btn-icon" onclick="toggleLibrary()">
+                <i class="fa-solid fa-border-all"></i>
+            </button>
+        </div>
+        <div style="display:flex; align-items:center; gap:15px;">
+            <div class="user-profile">
+                <img src="https://via.placeholder.com/20" id="userAvatar" class="user-avatar">
+            </div>
+            <button class="btn-icon" onclick="toggleSearchBar()" id="btnSearchToggle">
+                <i class="fa-solid fa-magnifying-glass"></i>
+            </button>
+        </div>
+        <div style="display:flex; gap:10px;">
+            <button class="btn-icon" onclick="toggleMenu('settings')">
+                <i class="fa-solid fa-plug"></i>
+            </button>
+        </div>
+    </header>
+
+    <div id="notificationMixer" style="position: absolute; top: 60px; right: 15px; width: 220px; background: #0a1525; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 15px; z-index: 6000; display: none; flex-direction: column; gap: 15px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1a2639; padding-bottom:10px;">
+            <span style="color:#a4b0be; font-size:0.8rem; font-weight:bold;">VOLUME</span>
+            <button onclick="toggleMixer()" style="background:none; border:none; color:#666; cursor:pointer;">
+                <i class="fa-solid fa-xmark" style="color:#666; font-size:1rem;"></i>
+            </button>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <i class="fa-solid fa-video" style="color:#a4b0be; font-size:1rem;"></i>
+            <input type="range" min="0" max="1" step="0.05" value="1" style="flex:1; accent-color:var(--accent);" oninput="setVideoVolume(this.value)" title="Volume Vídeo">
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <i class="fa-solid fa-user" style="color:#a4b0be; font-size:1rem;"></i>
+            <input type="range" min="0" max="1" step="0.05" value="1" style="flex:1; accent-color:var(--accent);" oninput="setVoiceVolume(this.value)" title="Volume Amigo">
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <i class="fa-solid fa-volume-low" style="color:#a4b0be; font-size:1rem;"></i>
+            <input type="range" min="0" max="1" step="0.1" value="1" style="flex:1; accent-color:var(--accent);" oninput="setTTSVolume(this.value)" title="Volume Chat Voz">
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <i class="fa-solid fa-bell" style="color:#a4b0be; font-size:1rem;"></i>
+            <input type="range" min="0" max="1" step="0.1" value="1" style="flex:1; accent-color:var(--accent);" oninput="setSFXVolume(this.value)" title="Volume Efeitos/Notificação">
+        </div>
+    </div>
+
+    <div class="stage-container" id="stageContainer">
+
+        <div class="url-overlay" id="urlBar">
+            <input type="text" id="mainInput" class="input-round" placeholder="Cole Link (YouTube, MP4, Site) ou Busque..." onfocus="this.select()" onkeydown="if(event.key==='Enter') processInput()">
+            <button class="btn-round btn-add" onclick="addToPlaylist()" title="Adicionar à Playlist">
+                <i class="fa-solid fa-plus"></i>
+            </button>
+            <button class="btn-round btn-search" onclick="processInput()" title="Ir/Pesquisar">
+                <i class="fa-solid fa-arrow-right"></i>
+            </button>
+            <button class="btn-round" style="background: var(--danger); margin-left: 5px;" onclick="toggleSearchBar()" title="Fechar">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div id="placeholder-screen" class="viewer-layer active">
+            <p class="sync-warning">
+                <i class="fa-solid fa-shield-halved"></i> 
+                Para Sites, deixe <strong>APENAS UMA ABA</strong> do CallCine aberta 
+                para a sincronização funcionar!
+            </p>
+            <div style="font-size: 3rem; font-weight: 900; color: #1a2639; letter-spacing: 5px;">CALL<span style="color:var(--accent)">CINE</span></div>
+            <p 
+            </p>
+            <p style="text-align:center; margin-top:10px; color:#e0e6ed; font-size:0.95rem;">
+                
+                <br><br>
+                </p>
+        </div>
+        <div id="yt-layer" class="viewer-layer"><div id="yt-player"></div></div>
+
+        <div id="native-player-layer" class="viewer-layer"><video id="native-video" playsinline>Não suportado.</video></div>
+
+        <div id="browser-layer" class="viewer-layer">
+            <div class="browser-header">
+                <button class="btn-browser" onclick="closeBrowser()" style="background: #333; color: white; border: 1px solid #555; margin-right: 10px;">
+                    <i class="fa-solid fa-house" style="color: white;"></i> HOME
+                </button>
+
+                <div style="display:flex; gap:5px;">
+                    <button id="btnAdBlock" class="btn-browser adblock-btn" onclick="toggleAdBlock()">
+                        <i class="fa-solid fa-shield-halved"></i> Bloqueio: ON
+                    </button>
+                    </div>
+            </div>
+            <iframe id="browser-frame" sandbox="allow-forms allow-scripts allow-same-origin allow-presentation allow-encrypted-media" src="" style="width:100%; height:calc(100% - 45px); border:none; background:white;"></iframe>
+            
+            </div>
+
+        <div id="custom-layer" class="viewer-layer"><div id="custom-frame-container" style="width:100%;height:100%"></div></div>
+
+        <div id="share-layer" class="viewer-layer">
+            <div style="position:absolute; top:10px; left:10px; background:rgba(0,0,0,0.7); padding:5px 10px; border-radius:4px; color:#fff; font-weight:bold; z-index:100;">
+                <i class="fa-solid fa-desktop" style="color:#fff; margin-right: 5px;"></i> Tela de <span id="share-name">Amigo</span>
+            </div>
+            <video id="share-video" autoplay playsinline style="width:100%; height:100%; object-fit:contain; background:#111;"></video>
+        </div>
+        
+        <button id="btnReopenControls" onclick="togglePlayerUI(false)" title="Reabrir Controles e Menu">
+            <i class="fa-solid fa-chevron-up"></i>
+        </button>
+        
+        <button id="btnReopenHeader" onclick="toggleHeader(false)" title="Reabrir Menu">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+        <div class="custom-controls">
+            <input type="range" id="progressBar" value="0" min="0" max="100" step="0.1" oninput="handleSeek(this.value)">
+
+            <div class="controls-wrapper">
+                <div class="time-row">
+                    <span id="timeDisplay">00:00 / 00:00</span>
+                    <div style="display:flex; gap:5px; align-items:center;">
+                        <span>Ir para:</span>
+                        <input type="text" class="manual-time-input" id="manualTime" placeholder="H:MM:SS" oninput="maskTime(this)" onkeydown="if(event.key==='Enter') submitTimeManual()">
+                    </div>
+                </div>
+
+                <div class="controls-row">
+                    <button class="btn-ctrl" id="btnMute" onclick="toggleVideoMute()">
+                        <i class="fa-solid fa-volume-high"></i>
+                    </button>
+                    
+                    <button class="btn-ctrl" id="btnToggleControls" onclick="togglePlayerUI(true)" title="Ocultar Controles e Menu">
+                        <i class="fa-solid fa-chevron-down"></i>
+                    </button>
+                    <button class="btn-ctrl" onclick="seekRelative(-10)">
+                        <i class="fa-solid fa-rotate-left"></i>
+                    </button>
+                    <button class="btn-ctrl main" id="btnPlayPause" onclick="togglePlayPause()">
+                        <i class="fa-solid fa-play"></i>
+                    </button>
+                    <button class="btn-ctrl" onclick="seekRelative(10)">
+                        <i class="fa-solid fa-rotate-right"></i>
+                    </button>
+
+                    <div style="width:20px;"></div> 
+                    <button class="btn-ctrl" onclick="playNextInQueue()">
+                        <i class="fa-solid fa-forward-step"></i>
+                    </button>
+                </div>
+                </div>
+        </div>
+    </div>
+
+    <div class="interaction-container">
+        <div class="cams-dock">
+            <div class="cam-box">
+                <div id="localMediaOff" class="media-off-overlay">
+                    <i class="fa-solid fa-video-slash"></i>
+                    <span>Câmera e Microfone Desligados</span>
+                    <span style="font-size:0.7rem; color:#888; margin-top:5px;">Ligue nas opções acima</span>
+                </div>
+                <video id="localVideo" class="webcam" autoplay muted playsinline></video>
+                <div class="label" id="localLabel">Você</div>
+                <div class="cam-overlay-controls">
+                    <div class="zoom-controls">
+                        <button class="btn-zoom" onclick="changeZoom(-0.1)">
+                            <i class="fa-solid fa-minus" style="font-size:0.8rem;"></i>
+                        </button>
+                        <button class="btn-zoom" onclick="changeZoom(0.1)">
+                            <i class="fa-solid fa-plus" style="font-size:0.8rem;"></i>
+                        </button>
+                    </div>
+                    <button id="btnSwitchCam" class="btn-cam-ctrl" onclick="switchCamera()">
+                        <i class="fa-solid fa-rotate"></i>
+                    </button>
+                    <div style="width:1px; height:15px; background:rgba(255,255,255,0.3); margin:0 2px;"></div>
+                    <button id="btnCamToggle" class="btn-cam-ctrl" onclick="toggleMedia('video')">
+                        <i class="fa-solid fa-video"></i>
+                    </button>
+                    <button id="btnMicToggle" class="btn-cam-ctrl" onclick="toggleMedia('audio')">
+                        <i class="fa-solid fa-microphone"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="cam-box" id="remoteBox">
+                <div id="waitFriend" class="waiting-friend">
+                    <div class="spinner"></div>
+                    <div style="font-size:0.7rem;">Buscando conexão...</div>
+                </div>
+
+                <div id="beRightBack" class="be-right-back">
+                    <i class="fa-solid fa-user-clock" style="font-size: 2.5rem; color: #ddd; margin-bottom: 10px;"></i>
+                    <span>Já volto, peraí...</span>
+                </div>
+
+                <button class="btn-alert-friend" onclick="playSfx('horn')" title="Chamar Atenção">
+                    <i class="fa-solid fa-bell"></i> 
+                </button>
+
+                <button class="btn-chat-remote" onclick="toggleChat()" title="Abrir Chat com Amigo">
+                    <i class="fa-solid fa-comment-dots"></i>
+                    <div id="chatBadge" class="badge-counter">0</div>
+                </button>
+                <div id="remoteMuteText" class="mute-overlay-text">
+                    <i class="fa-solid fa-microphone-slash"></i>
+                </div>
+
+                <video id="remoteVideo" class="webcam hidden" autoplay playsinline></video>
+                <div id="remoteLabel" class="label" style="display:none;">Amigo</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="chatPanel">
+        <div class="chat-header" id="chatHeader">
+            <div class="chat-header-left">
+                </div>
+            
+            <button onclick="toggleChat()" class="btn-close-fixed" style="border:none; background:none;">
+                <i class="fa-solid fa-chevron-down" style="color:#fff; font-size:1.2rem;"></i>
+            </button>
+        </div>
+
+        <div class="resize-handle handle-br" data-handle="br">
+            <i class="fa-solid fa-up-right-and-down-left-from-center"></i>
+        </div>
+        <div class="resize-handle handle-bl" data-handle="bl"></div>
+        <div class="resize-handle handle-tr" data-handle="tr"></div>
+        <div class="resize-handle handle-tl" data-handle="tl"></div>
+
+        <div class="chat-history" id="chatLog"></div>
+
+        <div class="chat-controls-area">
+
+            <div class="chat-input-row">
+                <input type="text" id="chatInput" class="input-full" placeholder="Digite..." onkeydown="if(event.key==='Enter') sendChat()">
+                <button onclick="sendChat()" class="btn-send">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <aside id="playlistPanel" class="side-panel">
+        <div class="header-panel">
+            <span>PLAYLIST & INFO</span>
+            <button onclick="closeMenus()" class="btn-close-fixed">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div id="playlistContainer" style="padding:15px; overflow-y:auto; flex:1;">
+            <div style="text-align:center; color:#57606f; margin-top:20px;">
+                <p>Lista Vazia.</p>
+                <small>Adicione links MP4 para ver infos do filme.</small>
+            </div>
+        </div>
+    </aside>
+    
+    <aside id="libraryPanel" class="side-panel">
+        <div class="header-panel">
+            <h2><span style="color:var(--accent)">CINE</span>CATÁLOGO</h2>
+            <button onclick="toggleLibrary()" class="btn-close-fixed">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="library-content">
+            
+            <div class="library-filters">
+                <button onclick="loadCatalog('custom')" class="filter-btn active">Meus Filmes</button>
+            </div>
+
+            <div id="movieGrid" class="movie-grid">
+                <div style="text-align:center; width:100%; color:#666;">Carregue o catálogo acima.</div>
+            </div>
+        </div>
+    </aside>
+
+    <aside id="settingsPanel" class="side-panel">
+        <div class="header-panel">
+            <span>CONEXÃO</span>
+            <button onclick="closeMenus()" class="btn-close-fixed">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div style="padding:20px; flex:1; display:flex; flex-direction:column;">
+            <label style="color:#a4b0be; font-size:0.8rem; font-weight:bold;">SEU ID</label>
+            <div id="myId" style="background:#0b1420; padding:10px; border-radius:6px; font-family:monospace; text-align:center; margin-bottom:20px; cursor:pointer; border:1px dashed var(--accent); color:var(--accent);" onclick="copyId()">...</div>
+
+            <div style="display:flex; justify-content:center; align-items:center; gap:5px; margin-bottom:20px; color:#a4b0be; font-size:0.8rem; font-weight:bold;">
+                 <i class="fa-solid fa-envelope" style="font-size:1rem;"></i> 
+                 <span id="myEmailDisplay">NÃO LOGADO</span>
+            </div>
+
+            <div id="saveFriendArea" class="save-friend-area">
+                <div style="font-size:0.9rem; color:#3498db; font-weight:bold; margin-bottom:5px;">Novo Amigo Detectado!</div>
+                <div id="newFriendName" style="font-size:0.8rem; color:#eee; margin-bottom:10px;"></div>
+                <button onclick="saveCurrentFriend()" style="width:100%; padding:10px; background:#3498db; border:none; border-radius:4px; font-weight:bold; cursor:pointer; color:white;">SALVAR AGORA</button>
+            </div>
+
+            <label style="color:#a4b0be; font-size:0.8rem; font-weight:bold;">CONECTAR MANUAL</label>
+            <div class="connect-row">
+                <input type="text" id="friendIdInput" placeholder="CINE-XXXX">
+                <button id="btnConnect" onclick="connectManual()">CONECTAR</button>
+            </div>
+
+            <label style="color:#a4b0be; font-size:0.8rem; font-weight:bold;">AMIGOS SALVOS</label>
+            <div id="friendsList" style="margin-top:10px; flex:1; overflow-y:auto; padding-right: 5px;"></div>
+
+            <button onclick="logout()" style="width:100%; padding:10px; background:var(--danger); border:none; border-radius:4px; font-weight:bold; cursor:pointer; margin-top:30px; color:white;">SAIR</button>
+            <div style="font-size:0.7rem; color:#57606f; text-align:center; margin-top:10px;">
+                DESENVOLVIDO POR JUNIOR ROCHA
+            </div>
+        </div>
+    </aside>
+
+    <script>
+        // --- CÓDIGO DO PWA SERVICE WORKER (EMBUTIDO) ---
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+
+                const serviceWorkerCode = `
+                    const CACHE_NAME = 'callcine-v1';
+                    const urlsToCache = [
+                        '/',
+                        'index.html',
+                        // Ícones PWA
+                        '/icons/icone.png',
+                        '/icons/Fundo.png',
+                        // NOVO: Ícones Font Awesome para uso offline (opcional, pode ser removido se depender apenas do CDN)
+                        'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
+
+                        // Itens essenciais
+                        'https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js',
+                        'https://www.youtube.com/iframe_api',
+                        'https://accounts.google.com/gsi/client',
+                    ];
+
+                    self.addEventListener('install', event => {
+                        console.log('Service Worker: Instalação iniciada...');
+                        event.waitUntil(
+                            caches.open(CACHE_NAME)
+                                .then(cache => {
+                                    console.log('Service Worker: Cache aberto.');
+                                    return cache.addAll(urlsToCache.filter(url => url.startsWith('/') || url.startsWith('http')));
+                                })
+                                .catch(err => {
+                                    console.error('Falha ao adicionar ao cache (verifique os caminhos):', err);
+                                })
+                        );
+                    });
+
+                    self.addEventListener('fetch', event => {
+                        event.respondWith(
+                            caches.match(event.request)
+                                .then(response => {
+                                    if (response) {
+                                        return response;
+                                    }
+
+                                    return fetch(event.request).then(networkResponse => {
+                                        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+                                            return networkResponse;
+                                        }
+                                        const responseToCache = networkResponse.clone();
+                                        caches.open(CACHE_NAME).then(cache => {
+                                            cache.put(event.request, responseToCache);
+                                        });
+                                        return networkResponse;
+                                    }).catch(error => {
+                                        console.log('Fetch failed:', event.request.url, error);
+                                    });
+                                })
+                        );
+                    });
+
+                    self.addEventListener('activate', event => {
+                        console.log('Service Worker: Ativado.');
+                        const cacheWhitelist = [CACHE_NAME];
+                        event.waitUntil(
+                            caches.keys().then(cacheNames => {
+                                return Promise.all(
+                                    cacheNames.map(cacheName => {
+                                        if (cacheWhitelist.indexOf(cacheName) === -1) {
+                                            return caches.delete(cacheName);
+                                        }
+                                    })
+                                );
+                            })
+                        );
+                    });
+                `;
+
+                const swBlob = new Blob([serviceWorkerCode], { type: 'application/javascript' });
+                const swUrl = URL.createObjectURL(swBlob);
+
+                navigator.serviceWorker.register(swUrl)
+                    .then(registration => {
+                        console.log('Service Worker registrado com sucesso:', registration.scope);
+                    })
+                    .catch(err => {
+                        console.log('Falha no registro do Service Worker:', err);
+                    });
+            });
+        }
+
+        // --- RESTANTE DO SEU CÓDIGO JAVASCRIPT ---
+
+        // --- CONFIGURAÇÃO CHAVE API TMDB ---
+        const TMDB_API_KEY = "3fd2be6f0c70a2a598f084ddfb75487c";
+        const GOOGLE_CLIENT_ID = "637437813670-k33ako3erkc9fj7c1p6i2jo98bqdbt1j.apps.googleusercontent.com";
+
+        // --- CONFIGURAÇÃO DE SERVIDORES ICE (METERED) ---
+        const peerConfig = {
+            config: {
+                iceServers: [
+                    { urls: "stun:stun.relay.metered.ca:80" },
+                    {
+                        urls: "turn:standard.relay.metered.ca:80",
+                        username: "cfec2fd6b0fe86e6083ff412",
+                        credential: "Ait1kNY7eGBeTkjj",
+                    },
+                    {
+                        urls: "turn:standard.relay.metered.ca:80?transport=tcp",
+                        username: "cfec2fd6b0fe86e6083ff412",
+                        credential: "Ait1kNY7eGBeTkjj",
+                    },
+                    {
+                        urls: "turn:standard.relay.metered.ca:443",
+                        username: "cfec2fd6b0fe86e6083ff412",
+                        credential: "Ait1kNY7eGBeTkjj",
+                    },
+                    {
+                        urls: "turns:standard.relay.metered.ca:443?transport=tcp",
+                        username: "cfec2fd6b0fe86e6083ff412",
+                        credential: "Ait1kNY7eGBeTkjj",
+                    },
+                ]
+            }
+        };
+
+        let peer, conn, myStream;
+        let screenStream = null;
+        let isScreenSharing = false;
+
+        let currentCall = null;
+        let ytPlayer, isSyncing = false;
+        let myProfile = { name: "Visitante", pic: "", id: "", email: "" };
+        let currentFriendProfile = null;
+        let amILeader = false;
+        let wakeLock = null;
+        let playlist = [];
+        let currentPlayIndex = -1;
+        let isConnecting = false;
+        let searchTimer = null;
+        let urlTargetId = null;
+        let unreadMessages = 0;
+        let isYtReady = false;
+        let pendingVideoLoad = null;
+
+        let currentFacingMode = 'user';
+        let currentDeviceId = null;
+        
+        // CORREÇÃO: Variáveis de Zoom
+        let currentZoom = 1.0;
+        const MIN_ZOOM = 1.0;
+        const MAX_ZOOM = 3.0;
+
+        let isVideoOn = false;
+        let isAudioOn = false;
+
+        let ttsVolume = 1.0;
+        let sfxVolume = 1.0;
+        
+        // NOVO: Variável para o timer de ocultação do header
+        let headerTimeout = null;
+
+        // VARIÁVEIS PARA DRAG & RESIZE DO CHAT
+        let isResizing = false;
+        let isDragging = false;
+        let startX, startY, startWidth, startHeight, startLeft, startTop;
+        let resizeHandleType = null;
+        const MIN_WIDTH = 280;
+        const MIN_HEIGHT = 250;
+
+        const synth = window.speechSynthesis;
+        let currentSfx = null;
+        let currentSfxKey = null;
+
+        const sfxMap = {
+            // MANUTENÇÃO: Mantido a URL original, mas a lógica de play foi ajustada.
+            'horn': 'https://www.myinstants.com/media/sounds/mlg-airhorn.mp3'
+        };
+
+        const giphyIds = {
+            ':)': '10tIjpzIu8fe0', ':D': 'ZqlvCTNHpqrio', ';)': 'B9KKBuOIp4zqI', ':P': '10JhviFuU2gWD6', ':(': 'wyvtV5RkZJqE0', ':@': '11tTNkZy11erV6', ':O': '51UpoKaWJ4J2w', '<3': 'LpDmW2eIZXsE2G8T62',
+            '(oni1)': 'D7jYV8iBqQ1q', '(oni2)': '13CoXdiaCcCoyk', '(oni3)': 'OPU6wzx8JrHna', '(oni4)': 'R6gvnAxj2t7GS', '(oni5)': 'jWx1tcdeLX4QM', '(oni6)': 'bDL3M73j0O58c', '(oni7)': '9Y6n9TR7U078A',
+            '(oni8)': 'Mc5hxYw6nctP2', '(oni9)': '13HBDT4QSTpveU', '(oni10)': 'JIX9t2j0ZTN9S', '(oni11)': 'M9gbBd9nbDrPc', '(oni12)': '3o6gbbuLW76jkt8vIc', '(oni13)': '3o6gDWzmAzrpi', '(oni14)': '3o6gE2LfcxozkQ',
+            '(oni15)': '3o6gDTrdkD3vK', '(oni16)': '3o6gEgGa7CqQz', '(oni17)': '3o6gDWzmAzrpi', '(oni18)': 'l0HlO3BJ8LxrZ4n3q', '(oni19)': 'l0HlE5eG5q', '(oni20)': 'l0HlCqV86z8w', '(oni21)': 'l0HlO3BJ8LxrZ4n3q',
+            '(cool)': '12riUeIeYtq7a8', '(love)': 'LpDmW2eIZXsE2G8T62', '(bye)': '3o6gE6VcGHclzNs', '(hi)': '3o6gEgGa7CqQz'
+        };
+
+        const msnMap = {};
+        for (const [key, id] of Object.entries(giphyIds)) { msnMap[key] = `https://media.giphy.com/media/${id}/giphy.gif`; }
+
+        window.tryReloadSticker = function(img) { img.style.display = 'none'; };
+
+        // CORREÇÃO: Usa 'new Audio()' para garantir um novo objeto e evento 'onended' confiável.
+        const notifSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'); 
+        const nativeVideo = document.getElementById('native-video');
+
+        // --- NOVAS VARIÁVEIS E LÓGICA DA BIBLIOTECA DE FILMES ---
+        const MEU_CATALOGO_URL = './filmes.json'; 
+        let meusFilmesDB = [];
+        // ATUALIZADO: Força o tipo de catálogo para 'custom'
+        let currentCatalogType = 'custom'; 
+        
+        async function carregarBancoDeDados() {
+            try {
+                const res = await fetch(MEU_CATALOGO_URL);
+                meusFilmesDB = await res.json();
+                console.log("Banco de dados local carregado:", meusFilmesDB.length, "filmes.");
+            } catch (e) {
+                console.log("Nenhum banco de dados local (filmes.json) encontrado. Usando apenas TMDB.");
+                // ** CRUCIAL: Se falhar, o erro deve ser visível no Console. **
+                console.error("ERRO JSON:", e);
+            }
+        }
+        // Chamada inicial para carregar seu JSON
+        carregarBancoDeDados();
+
+        function toggleLibrary() { 
+            const p = document.getElementById('libraryPanel'); 
+            const was = p.classList.contains('open'); 
+            closeMenus(); 
+            if(!was) { 
+                p.classList.add('open'); 
+                document.getElementById('overlay').classList.add('active'); 
+                // Força o carregamento do catálogo 'custom'
+                loadCatalog('custom');
+            } 
+        }
+
+        async function loadCatalog(type) {
+            // REMOVIDO: Lógica para carregar TMDB popular/top_rated/upcoming
+
+            currentCatalogType = 'custom'; // Força 'custom'
+            const grid = document.getElementById('movieGrid');
+            grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding:20px;"><div class="spinner"></div><p style="color:#666; margin-top:10px;">Buscando filmes...</p></div>';
+
+            // Atualiza botões de filtro visualmente (apenas o 'Meus Filmes' existe e fica ativo)
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            const activeBtn = Array.from(document.querySelectorAll('.filter-btn')).find(b => b.innerText.includes('Meus Filmes'));
+            if(activeBtn) activeBtn.classList.add('active');
+
+
+            try {
+                let filmesParaMostrar = [];
+
+                // SE O USUÁRIO ESCOLHER "MEUS FILMES" (JSON local)
+                if (meusFilmesDB.length === 0) {
+                    grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding:50px; color:#57606f;">Nenhum filme encontrado. Verifique seu arquivo filmes.json.</div>';
+                    return;
+                }
+                
+                // Busca detalhes de cada filme do seu JSON no TMDB (Smart Search)
+                const promessas = meusFilmesDB.map(async (filme) => {
+                     let dadosFilme = null;
+                     
+                     // 1. Prioriza busca por TMDB ID (se existir)
+                     if (filme.tmdb_id) {
+                         const res = await fetch(`https://api.themoviedb.org/3/movie/${filme.tmdb_id}?api_key=${TMDB_API_KEY}&language=pt-BR`);
+                         dadosFilme = await res.json();
+                     } 
+                     // 2. Fallback: Busca por TÍTULO (se o TMDB ID for nulo - ex: vindo do Apps Script)
+                     else if (filme.titulo) {
+                         const query = encodeURIComponent(filme.titulo);
+                         const res = await fetch(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${query}&language=pt-BR&page=1`);
+                         const searchData = await res.json();
+                         
+                         if (searchData.results && searchData.results.length > 0) {
+                             dadosFilme = searchData.results[0]; 
+                         }
+                     }
+
+                     if (dadosFilme && dadosFilme.poster_path) {
+                         // Adiciona a URL do Drive/MP4 ao objeto do filme para uso futuro
+                         dadosFilme.custom_url = filme.url;
+                         // ADICIONADO: Preserva o título do JSON original no objeto
+                         dadosFilme.original_title = filme.titulo;
+                         return dadosFilme;
+                     } else if (filme.url && filme.titulo) {
+                        // Se falhar a busca no TMDB, ainda retorna um placeholder com o link
+                        return {
+                            title: filme.titulo,
+                            original_title: filme.titulo, // Para manter a coerência
+                            custom_url: filme.url,
+                            poster_path: null,
+                            release_date: 'DRIVE'
+                        };
+                     }
+                     return null;
+                });
+
+                const resultados = await Promise.all(promessas);
+                filmesParaMostrar = resultados.filter(f => f !== null);
+
+                grid.innerHTML = ""; // Limpa loading
+
+                if (filmesParaMostrar.length === 0) {
+                     grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding:50px; color:#57606f;">Nenhum filme encontrado. Verifique seu arquivo filmes.json.</div>';
+                     return;
+                }
+
+                filmesParaMostrar.forEach(movie => {
+                    // ATUALIZADO: Usa movie.original_title (que vem do JSON) se existir, senão usa movie.title
+                    const cardTitle = movie.original_title || movie.title;
+
+                    // Verifica se temos este filme no nosso JSON (para dar override no link)
+                    let linkProprio = meusFilmesDB.find(f => f.tmdb_id == movie.id);
+                    if (!linkProprio && movie.custom_url) {
+                        linkProprio = { url: movie.custom_url };
+                    }
+                    const temLink = !!linkProprio;
+
+                    const card = document.createElement('div');
+                    card.className = 'movie-card';
+                    // Se tiver link próprio, passa a URL. Se não, passa null para buscar trailer.
+                    card.onclick = () => playMovieFromLibrary(movie.id, cardTitle, linkProprio ? linkProprio.url : null);
+
+                    const badge = temLink ? '<i class="fa-solid fa-cloud-arrow-down" style="position:absolute; top:5px; right:5px; color:#aaff00; background:rgba(0,0,0,0.7); padding:4px; border-radius:50%; z-index:11;"></i>' : '';
+
+                    const imgUrl = movie.poster_path 
+                        ? `https://image.tmdb.org/t/p/w300${movie.poster_path}`
+                        : `https://via.placeholder.com/300x450?text=${encodeURIComponent(cardTitle.substring(0, 20))}`;
+                    
+                    card.innerHTML = `
+                        <img src="${imgUrl}" class="movie-poster" loading="lazy">
+                        ${badge}
+                        <div class="movie-info">
+                            <div class="movie-title">${cardTitle} (${movie.release_date ? movie.release_date.substring(0, 4) : 'N/A'})</div>
+                        </div>
+                    `;
+                    grid.appendChild(card);
+                });
+
+            } catch (e) {
+                console.error("Erro ao carregar catálogo:", e);
+                grid.innerHTML = '<p style="grid-column: 1/-1; color:red; text-align:center;">Erro ao carregar filmes. Verifique sua chave TMDB ou o arquivo filmes.json.</p>';
+            }
+        }
+
+        async function playMovieFromLibrary(tmdbId, title, customUrl) {
+            showToast(`Preparando a mídia...`);
+            
+            // 1. CENÁRIO: TEM O LINK PRÓPRIO (MP4/DRIVE)
+            if (customUrl) {
+                toggleLibrary(); // Fechad a biblioteca
+                loadVideo(customUrl); // Carrega localmente
+                
+                // Sincroniza com amigo
+                setLeader(true);
+                sendData({ type: 'claim_leader' });
+                sendData({ type: 'navigate', url: customUrl });
+                
+                showToast("Reproduzindo Arquivo Próprio");
+                return;
+            }
+
+            // 2. CENÁRIO: NÃO TEM LINK PRÓPRIO, BUSCA TRAILER (FALLBACK)
+            try {
+                const res = await fetch(`https://api.themoviedb.org/3/movie/${tmdbId}/videos?api_key=${TMDB_API_KEY}&language=pt-BR`);
+                const data = await res.json();
+                
+                let trailer = data.results.find(v => v.type === 'Trailer' && v.site === 'YouTube');
+                
+                // Tenta buscar em inglês se não achar em português
+                if (!trailer) {
+                    const resEn = await fetch(`https://api.themoviedb.org/3/movie/${tmdbId}/videos?api_key=${TMDB_API_KEY}&language=en-US`);
+                    const dataEn = await resEn.json();
+                    trailer = dataEn.results.find(v => v.type === 'Trailer' && v.site === 'YouTube');
+                }
+
+                if (trailer) {
+                    const youtubeUrl = `https://www.youtube.com/watch?v=${trailer.key}`;
+                    
+                    toggleLibrary(); 
+                    loadVideo(youtubeUrl);
+                    
+                    setLeader(true);
+                    sendData({ type: 'claim_leader' });
+                    sendData({ type: 'navigate', url: youtubeUrl });
+                    
+                    showToast("Reproduzindo Trailer do YouTube");
+
+                } else {
+                    showToast("Trailer não encontrado para este filme.");
+                }
+
+            } catch (e) {
+                console.error(e);
+                showToast("Erro ao buscar trailer.");
+            }
+        }
+        // --- FIM LÓGICA DA BIBLIOTECA ---
+
+        // --- SISTEMA DE LOGIN GOOGLE PERSISTENTE ---
+
+        window.handleCredentialResponse = function(response) {
+            try {
+                const payload = JSON.parse(atob(response.credential.split('.')[1]));
+                const staticId = "CINE-" + Math.abs(payload.email.split('').reduce((a,b)=>{a=((a<<5)-a)+b.charCodeAt(0);return a&a},0)).toString(36).substring(0,4).toUpperCase().padEnd(4,'X');
+
+                myProfile = { name: payload.given_name, pic: payload.picture, email: payload.email, id: staticId };
+
+                try {
+                    localStorage.setItem('cine_session_v4', JSON.stringify(myProfile));
+                } catch (storageError) {
+                    alert("Atenção: Seu navegador bloqueou o salvamento do login.\nSe estiver usando arquivo local (file://), use um Servidor Local.");
+                }
+
+                showGateScreen();
+            } catch (e) { console.error(e); alert("Erro ao processar login Google."); }
+        };
+
+        window.onload = () => {
+            const saved = localStorage.getItem('cine_session_v4');
+            if (saved) {
+                try {
+                    myProfile = JSON.parse(saved);
+                    showGateScreen();
+                } catch(e) {
+                    localStorage.removeItem('cine_session_v4');
+                }
+            }
+
+            renderFriends();
+            const urlParams = new URLSearchParams(window.location.search);
+            if(urlParams.get('conectar')) {
+                urlTargetId = urlParams.get('conectar');
+                document.getElementById('friendIdInput').value = urlTargetId;
+            }
+            setupNativeListeners();
+            setInterval(updateProgressBar, 500);
+
+            if (synth.onvoiceschanged !== undefined) {
+                synth.onvoiceschanged = () => { console.log("Voices loaded."); };
+            }
+
+            /* REMOVIDO: Conexão automática
+            setInterval(() => {
+                if((!conn || !conn.open) && !currentCall) {
+                    autoConnectSavedFriends();
+                }
+            }, 5000);
+            */
+
+            // NOVO: Inicializa Drag & Resize e carrega posição salva
+            setupDragAndResize();
+            loadChatPosition();
+            
+            // NOVO: Adiciona listeners para controle de ocultação do header na navegação
+            setupHeaderAutoHideListeners();
+        };
+        //... (O restante do código JavaScript que não foi alterado continua aqui)
+        
+        // NOVO: Função para configurar os listeners de ocultação automática do header
+        function setupHeaderAutoHideListeners() {
+            const stage = document.getElementById('stageContainer');
+
+            // Função para resetar o timer
+            const resetHeaderTimer = () => {
+                if(getCurrentPlayerType() === 'browser') {
+                    clearTimeout(headerTimeout);
+                    toggleHeader(false); // Mostra o header
+                    headerTimeout = setTimeout(() => {
+                        toggleHeader(true); // Esconde o header após 3 segundos
+                    }, 3000);
+                }
+            };
+            
+            // Oculta o header ao carregar a página se estiver no navegador
+            if (getCurrentPlayerType() === 'browser') {
+                resetHeaderTimer();
+            }
+
+            // Reseta o timer a cada movimento do mouse ou toque na área do player
+            stage.addEventListener('mousemove', resetHeaderTimer);
+            stage.addEventListener('touchstart', resetHeaderTimer, { passive: true });
+            
+            // Também reseta ao clicar em qualquer item do header para mantê-lo visível após a interação
+            const header = document.getElementById('main-header');
+            header.addEventListener('click', () => {
+                resetHeaderTimer();
+            });
+        }
+        // FIM NOVO
+
+        function loadChatPosition() {
+            const chatPanel = document.getElementById('chatPanel');
+            const savedPos = localStorage.getItem('chat_pos');
+
+            if (savedPos) {
+                try {
+                    const pos = JSON.parse(savedPos);
+                    // Aplica as dimensões e posição salvas
+                    chatPanel.style.width = pos.width;
+                    chatPanel.style.height = pos.height;
+                    chatPanel.style.left = pos.left;
+                    chatPanel.style.top = pos.top;
+                    // Remove a transformação de centralização inicial
+                    chatPanel.style.transform = 'none';
+                } catch(e) {
+                    console.error("Erro ao carregar posição do chat:", e);
+                }
+            }
+        }
+
+        function showGateScreen() {
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('start-gate').style.display = 'flex';
+            document.getElementById('gateAvatar').src = myProfile.pic;
+            document.getElementById('userAvatar').src = myProfile.pic;
+            document.getElementById('myId').innerText = myProfile.id;
+
+            // CORREÇÃO: Atualiza o campo de email no painel de conexão
+            const emailSpan = document.getElementById('myEmailDisplay');
+            if (emailSpan) {
+                emailSpan.innerText = myProfile.email || 'NÃO LOGADO';
+            }
+        }
+
+        async function requestWakeLock() { try { wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {} }
+        function enterApp() {
+            document.getElementById('start-gate').style.display = 'none';
+            setTimeout(() => {
+                startMedia().then(() => {
+                    startPeer();
+                    requestWakeLock();
+                    document.getElementById('btnCamToggle').classList.add('off');
+                    document.getElementById('btnMicToggle').classList.add('off');
+                });
+            }, 200);
+        }
+
+        async function startMedia() {
+            try {
+                if(myStream) {
+                    myStream.getTracks().forEach(track => track.stop());
+                }
+
+                let videoConfig = {};
+                if (currentDeviceId) {
+                    videoConfig = { deviceId: { exact: currentDeviceId } };
+                } else {
+                    videoConfig = { facingMode: currentFacingMode };
+                }
+
+                const constraints = { video: videoConfig, audio: true };
+
+                myStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+                myStream.getVideoTracks().forEach(track => track.enabled = isVideoOn);
+                myStream.getAudioTracks().forEach(track => track.enabled = isAudioOn);
+                updateLocalMediaUI();
+
+                const localVid = document.getElementById('localVideo');
+                localVid.srcObject = myStream;
+                localVid.muted = true;
+                
+                // CORREÇÃO: Aplica o zoom inicial ao iniciar a mídia
+                handleZoom(currentZoom);
+
+                isScreenSharing = false;
+                localVid.classList.remove('screen-share-active');
+                // REMOVIDO: A remoção da classe do botão de compartilhamento de tela.
+                // document.getElementById('btnScreenShare').classList.remove('active');
+
+                if(currentFacingMode === 'environment') {
+                    localVid.classList.add('no-mirror');
+                } else {
+                    localVid.classList.remove('no-mirror');
+                }
+
+                return true;
+            } catch(e) { showToast("Erro ao iniciar Câmera e Microfone."); return false; }
+        }
+
+        // REMOVIDO: Função toggleScreenShare() e toda a lógica de compartilhamento de tela.
+        /*
+        async function toggleScreenShare() {
+            if (isScreenSharing) {
+                await startMedia();
+                isScreenSharing = false;
+                document.getElementById('btnScreenShare').classList.remove('active');
+                document.getElementById('localLabel').innerText = "Você";
+                document.getElementById('localVideo').classList.remove('screen-share-active');
+                // CORREÇÃO: Restaura o zoom para 1.0 ao desativar o compartilhamento
+                currentZoom = 1.0; 
+                handleZoom(currentZoom);
+
+                if(currentCall) {
+                    const videoTrack = myStream.getVideoTracks()[0];
+                    const sender = currentCall.peerConnection.getSenders().find(s => s.track.kind === 'video');
+                    if(sender) sender.replaceTrack(videoTrack);
+                }
+                sendData({ type: 'screen_share_status', active: false });
+
+            } else {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+                    return showToast("Seu navegador/dispositivo não suporta compartilhar tela.");
+                }
+
+                try {
+                    screenStream = await navigator.mediaDevices.getDisplayMedia({
+                        video: { cursor: "always" },
+                        audio: true
+                    });
+
+                    isScreenSharing = true;
+
+                    document.getElementById('btnScreenShare').classList.add('active');
+                    document.getElementById('localLabel').innerText = "Sua Tela";
+                    
+                    // CORREÇÃO: Restaura o zoom para 1.0 e aplica o estilo de tela cheia para compartilhamento
+                    currentZoom = 1.0; 
+                    handleZoom(currentZoom); 
+
+                    const localVid = document.getElementById('localVideo');
+                    localVid.srcObject = screenStream;
+                    localVid.classList.add('screen-share-active');
+
+                    const screenTrack = screenStream.getVideoTracks()[0];
+                    if(currentCall && currentCall.peerConnection) {
+                        const sender = currentCall.peerConnection.getSenders().find(s => s.track.kind === 'video');
+                        if(sender) sender.replaceTrack(screenTrack);
+                    }
+
+                    screenTrack.onended = () => {
+                        if(isScreenSharing) toggleScreenShare();
+                    };
+
+                    sendData({ type: 'screen_share_status', active: true });
+
+                } catch (e) {
+                    console.error("Erro Tela:", e);
+                    showToast("Erro ao compartilhar tela.");
+                }
+            }
+        }
+        */
+        
+
+        async function switchCamera() {
+            if(isScreenSharing) return showToast("Desative o compartilhamento de tela primeiro");
+            const targetMode = currentFacingMode === 'user' ? 'environment' : 'user';
+
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoInputs = devices.filter(d => d.kind === 'videoinput');
+                let targetDeviceId = null;
+
+                if (targetMode === 'environment') {
+                    const backCams = videoInputs.filter(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('traseira'));
+                    if (backCams.length > 0) targetDeviceId = backCams[0].deviceId;
+                } else {
+                    const frontCams = videoInputs.filter(d => d.label.toLowerCase().includes('front') || d.label.toLowerCase().includes('user'));
+                    if (frontCams.length > 0) targetDeviceId = frontCams[0].deviceId;
+                }
+
+                currentFacingMode = targetMode;
+                currentDeviceId = targetDeviceId;
+
+                await startMedia();
+
+                if(currentCall && currentCall.peerConnection) {
+                    const videoTrack = myStream.getVideoTracks()[0];
+                    const sender = currentCall.peerConnection.getSenders().find(s => s.track.kind === 'video');
+                    if(sender) {
+                        sender.replaceTrack(videoTrack);
+                    }
+                }
+
+            } catch(e) {
+                currentFacingMode = targetMode;
+                currentDeviceId = null;
+                await startMedia();
+            }
+        }
+
+        // CORREÇÃO: Nova função para controle incremental do zoom
+        function changeZoom(delta) {
+            // Calcula o novo valor de zoom, garantindo que esteja dentro dos limites.
+            let newZoom = currentZoom + delta;
+            newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+            
+            // Arredonda para uma casa decimal (para evitar problemas de ponto flutuante)
+            newZoom = Math.round(newZoom * 10) / 10; 
+
+            // Se o zoom não mudou (atingiu o limite), não faça nada.
+            if (newZoom === currentZoom) return;
+
+            currentZoom = newZoom;
+            handleZoom(currentZoom);
+        }
+
+        function handleZoom(val) {
+            currentZoom = val;
+            const localVid = document.getElementById('localVideo');
+            if(isScreenSharing) {
+                localVid.style.transform = `scale(${val})`;
+            } else {
+                const mirror = currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+                localVid.style.transform = `${mirror} scale(${val})`;
+            }
+            sendData({ type: 'cam_zoom', val: val });
+            
+            // Feedback visual do zoom
+            showToast(`Zoom: ${val}x`); 
+        }
+
+        function startPeer() {
+            if(peer) peer.destroy();
+            peer = new Peer(myProfile.id, peerConfig);
+
+            peer.on('open', (id) => {
+                document.getElementById('myId').innerText = id;
+                showToast("Conexão Online");
+                if(urlTargetId) connectToID(urlTargetId);
+            });
+
+            peer.on('error', (err) => {
+                resetConnectBtn();
+                if(err.type === 'unavailable-id') { setTimeout(startPeer, 2000); }
+            });
+
+            peer.on('call', (call) => {
+                // Apenas atende chamadas de vídeo/áudio após o data connection ser estabelecido ou um convite aceito.
+                // Aqui, apenas armazena a chamada se já houver uma conexão de dados ativa
+                if(conn && conn.peer === call.peer) {
+                    let streamToSend = isScreenSharing ? screenStream : myStream;
+                    currentCall = call; call.answer(streamToSend);
+                    call.on('stream', (rs) => { setRemoteStream(rs); });
+                } else {
+                    // Rejeita a chamada se não houver conexão de dados prévia (previne spam de chamada)
+                    call.close();
+                }
+            });
+
+            // Ouve por conexões de DADOS de outros peers
+            peer.on('connection', (c) => setupConnection(c));
+        }
+
+        /* REMOVIDO: Conexão automática
+        function autoConnectSavedFriends() {
+            if(isConnecting) return;
+            const friends = JSON.parse(localStorage.getItem('cine_friends_v4') || "[]");
+            if(friends.length === 0) return;
+
+            isConnecting = true;
+            const target = friends.find(f => f.id !== myProfile.id);
+            if(target) {
+                const connAttempt = peer.connect(target.id);
+                if(connAttempt) {
+                    setTimeout(() => {
+                        if(!conn || !conn.open) isConnecting = false;
+                    }, 5000);
+                    setupConnection(connAttempt);
+                } else {
+                    isConnecting = false;
+                }
+            } else {
+                isConnecting = false;
+            }
+        }
+        */
+
+        function connectToID(targetId) {
+            if(conn && conn.open) return showToast("Já conectado com um amigo. Desconecte primeiro.");
+            if(!targetId) return;
+            if(!targetId.startsWith("CINE-")) targetId = "CINE-" + targetId;
+            if(targetId === myProfile.id) return showToast("Você não pode conectar consigo mesmo.");
+
+            isConnecting = true;
+            showToast("Conectando dados...");
+            const newConn = peer.connect(targetId, { reliable: true });
+            if(newConn) {
+                setupConnection(newConn);
+            } else {
+                isConnecting = false;
+                resetConnectBtn();
+            }
+        }
+        
+        // NOVO: Função para iniciar um convite para um amigo salvo
+        function inviteFriend(friendId) {
+            if(conn && conn.open) return showToast("Já conectado com um amigo. Desconecte primeiro.");
+            
+            const friend = JSON.parse(localStorage.getItem('cine_friends_v4') || "[]").find(f => f.id === friendId);
+            if (!friend) return showToast("Amigo não encontrado.");
+            
+            // 1. Inicia a conexão de dados (Data Connection)
+            const newConn = peer.connect(friendId, { reliable: true });
+            
+            if (newConn) {
+                isConnecting = true;
+                showToast(`Enviando convite para ${friend.name}...`);
+                
+                // 2. A conexão será estabelecida em setupConnection
+                setupConnection(newConn, true); // O 'true' indica que estamos iniciando a conexão
+            }
+        }
+
+
+        function startRealMediaCall() {
+            let streamToSend = isScreenSharing ? screenStream : myStream;
+            if(streamToSend && conn && conn.open) {
+                const call = peer.call(conn.peer, streamToSend);
+                call.on('stream', (rs) => setRemoteStream(rs));
+                currentCall = call;
+                showToast("Conexão de vídeo iniciada!");
+            }
+        }
+
+        function connectManual() {
+            let targetId = document.getElementById('friendIdInput').value.trim().toUpperCase();
+            if(!targetId) return showToast("Digite o ID");
+            const btn = document.getElementById('btnConnect'); btn.innerText = "..."; btn.disabled = true;
+            connectToID(targetId);
+        }
+
+        function resetConnectBtn() { const btn = document.getElementById('btnConnect'); btn.innerText = "CONECTAR"; btn.disabled = false; }
+
+        function setRemoteStream(stream) {
+            const v = document.getElementById('remoteVideo');
+            v.srcObject = stream;
+            v.classList.remove('hidden');
+            v.muted = false;
+            v.volume = 1.0;
+            var playPromise = v.play();
+            if (playPromise !== undefined) {
+                playPromise.then(_ => {}).catch(error => { console.log("Autoplay blocked"); });
+            }
+            document.getElementById('waitFriend').style.display = 'none';
+            document.getElementById('remoteLabel').style.display = 'block';
+
+            const shareLayer = document.getElementById('share-layer');
+            if(shareLayer.classList.contains('active')) {
+                const shareVideo = document.getElementById('share-video');
+                shareVideo.srcObject = v.srcObject;
+                shareVideo.play();
+            }
+        }
+
+        // MODIFICADO: Adicionado 'isInitiator' para controle do fluxo de convite.
+        function setupConnection(c, isInitiator = false) {
+            if(conn && conn.open) return;
+            conn = c;
+            
+            // Se for o receptor (peer.on('connection') é disparado)
+            if (!isInitiator) {
+                 conn.on('open', () => {
+                    // Não faz o handshake aqui. Espera o invite para decidir.
+                    showToast("Tentativa de conexão recebida.");
+                    resetConnectBtn();
+                    isConnecting = false;
+                 });
+            }
+            
+            // Se for o iniciador (connectToID ou inviteFriend é disparado)
+            else if (isInitiator) {
+                 conn.on('open', () => {
+                    // Após abrir, envia o convite
+                    conn.send({ type: 'invite', sender: myProfile });
+                    showToast("Convite enviado. Aguardando resposta...");
+                    // Inicia o handshake/video call APENAS se receber a resposta 'accept_invite'.
+                 });
+            }
+
+            conn.on('data', (data) => handleData(data));
+            conn.on('close', () => {
+                showToast("Amigo Desconectou");
+                handleDisconnect();
+            });
+            conn.on('error', (err) => { console.error(err); isConnecting = false; resetConnectBtn(); });
+        }
+
+        // NOVO: Função para exibir a pop-up de convite
+        function showInvitePopup(senderProfile) {
+            const popup = document.getElementById('msg-popup');
+            const content = document.getElementById('popup-content');
+            const buttons = document.getElementById('popup-buttons');
+            
+            content.innerHTML = `<i class="fa-solid fa-bell" style="font-size: 2rem; color: var(--horn); margin-bottom: 10px;"></i>
+                                 <p>Convite para assistir junto de <strong>${senderProfile.name}</strong>!</p>`;
+            
+            buttons.innerHTML = `<button class="msg-popup-btn accept" onclick="handleInviteResponse(true, '${senderProfile.id}')">
+                                     <i class="fa-solid fa-check"></i> Aceitar
+                                 </button>
+                                 <button class="msg-popup-btn reject" onclick="handleInviteResponse(false, '${senderProfile.id}')">
+                                     <i class="fa-solid fa-xmark"></i> Rejeitar
+                                 </button>`;
+            
+            popup.classList.add('show');
+            document.getElementById('overlay').classList.add('active');
+        }
+        
+        // NOVO: Função para lidar com a resposta do convite (Aceitar/Rejeitar)
+        function handleInviteResponse(accept, senderId) {
+            const popup = document.getElementById('msg-popup');
+            popup.classList.remove('show');
+            document.getElementById('overlay').classList.remove('active');
+            
+            if (!conn || conn.peer !== senderId) {
+                // Se a conexão for perdida ou for de um peer diferente, ignora
+                return showToast("A conexão com o amigo expirou.");
+            }
+
+            if (accept) {
+                // 1. Envia resposta de aceite
+                conn.send({ type: 'accept_invite', profile: myProfile });
+                
+                // 2. Continua o fluxo de conexão (handshake e chamada de vídeo)
+                currentFriendProfile = conn.remoteProfile || null; 
+                updateFriendUI();
+                renderFriends();
+                startRealMediaCall();
+                
+                showToast(`Convite aceito de ${currentFriendProfile ? currentFriendProfile.name : senderId}!`);
+                closeMenus();
+
+            } else {
+                // Rejeita
+                conn.send({ type: 'reject_invite' });
+                conn.close();
+                handleDisconnect();
+                showToast("Convite rejeitado.");
+            }
+        }
+
+
+        function handleData(data) {
+            switch(data.type) {
+                
+                // NOVO: Lida com o convite recebido
+                case 'invite':
+                    // Armazena o perfil do remetente na conexão
+                    conn.remoteProfile = data.sender;
+                    // Exibe a pop-up para o usuário
+                    showInvitePopup(data.sender);
+                    break;
+                    
+                // NOVO: Lida com a aceitação do convite (Enviado pelo RECEBEDOR)
+                case 'accept_invite':
+                    // 1. Recebe o perfil do amigo
+                    currentFriendProfile = data.profile;
+                    document.getElementById('remoteLabel').innerText = data.profile.name;
+                    
+                    // 2. Faz o Handshake final
+                    conn.send({ type: 'handshake', profile: myProfile });
+
+                    // 3. Atualiza UI e inicia a chamada
+                    updateFriendUI();
+                    renderFriends();
+                    startRealMediaCall();
+                    
+                    showToast(`Conexão estabelecida com ${currentFriendProfile.name}!`);
+                    closeMenus();
+                    
+                    if(playlist.length > 0) {
+                         conn.send({ type: 'playlist_sync', playlist: playlist });
+                    }
+                    isConnecting = false;
+                    resetConnectBtn();
+                    break;
+
+                // NOVO: Lida com a rejeição do convite
+                case 'reject_invite':
+                    showToast("Convite rejeitado pelo amigo.");
+                    conn.close();
+                    handleDisconnect();
+                    break;
+                    
+                // Handshake (ocorre apenas após accept_invite para troca final de dados)
+                case 'handshake':
+                    currentFriendProfile = data.profile;
+                    document.getElementById('remoteLabel').innerText = data.profile.name;
+                    updateFriendUI();
+                    renderFriends();
+                    // O startRealMediaCall já foi feito no 'accept_invite'
+                    break;
+
+                case 'chat':
+                    addChatMsg(data.msg, false);
+                    // Lógica para notificar sobre nova mensagem (sem o body.chat-active)
+                    if(!document.getElementById('chatPanel').classList.contains('open')) {
+                        unreadMessages++;
+                        updateBadge();
+
+                        // --- CORREÇÃO: Sequência BIP -> Voz ---
+                        notifSound.volume = sfxVolume;
+                        // Reinicia o áudio para garantir que o evento onended funcione corretamente
+                        const tempSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'); 
+                        tempSound.volume = sfxVolume;
+
+                        tempSound.onended = () => {
+                            // Toca a voz APENAS após o som da notificação terminar
+                            speak(data.msg); 
+                        };
+                        
+                        // Tenta tocar o som. Se falhar (autoplay bloqueado), toca a voz imediatamente.
+                        tempSound.play().catch(error => {
+                            console.error("Autoplay bloqueado para o BIP. Falando mensagem imediatamente.", error);
+                            speak(data.msg);
+                        });
+                        // --- FIM CORREÇÃO ---
+
+                        // MODIFICADO: Pop-up de mensagem agora mostra APENAS a mensagem (NOVO)
+                        showToast(data.msg);
+                    }
+                    break;
+                case 'yt_sync': applyYTSync(data); break;
+                case 'force_sync':
+                    if(data.videoId && ytPlayer) {
+                        isSyncing = true;
+                        ytPlayer.loadVideoById(data.videoId, data.time);
+                        if(data.state === 1) ytPlayer.playVideo();
+                        else ytPlayer.pauseVideo();
+                        setTimeout(() => isSyncing = false, 1000);
+                        document.getElementById('yt-layer').classList.add('active');
+                    }
+                    break;
+                case 'request_state':
+                    if(isYtReady && ytPlayer && ytPlayer.getVideoData) {
+                        const vData = ytPlayer.getVideoData();
+                        if(vData && vData.video_id) {
+                             conn.send({
+                                 type: 'force_sync',
+                                 videoId: vData.video_id,
+                                 time: ytPlayer.getCurrentTime(),
+                                 state: ytPlayer.getPlayerState()
+                             });
+                        }
+                    }
+                    break;
+                case 'native_sync': applyNativeSync(data); break;
+                case 'navigate': loadVideo(data.url); break;
+
+                case 'playlist_sync':
+                    playlist = data.playlist;
+                    renderPlaylist();
+                    showToast("Playlist Sincronizada");
+                    break;
+
+                case 'sfx_play':
+                    // NOVO: Chama a função para o som/tremor local
+                    handleRemoteSfxPlay(data.key);
+                    break;
+
+                case 'sfx_stop':
+                    stopCurrentSfx();
+                    toggleShakeScreen(false); // Garante que o tremor pare imediatamente
+                    break;
+
+                case 'media_state': applyMediaState(data); break;
+
+                case 'screen_share_status':
+                    // MANTIDO: Lógica do recebimento do estado de compartilhamento (mesmo com a remoção do botão local)
+                    const rv = document.getElementById('remoteVideo');
+                    const rl = document.getElementById('remoteLabel');
+
+                    const shareLayer = document.getElementById('share-layer');
+                    const shareVideo = document.getElementById('share-video');
+                    const shareName = document.getElementById('share-name');
+
+                    if(data.active) {
+                        rv.style.objectFit = 'contain';
+                        rv.style.background = '#111';
+                        rv.style.transform = 'scaleX(1)';
+                        rl.innerText = currentFriendProfile.name + " (Tela)";
+
+                        if(rv.srcObject) {
+                            shareVideo.srcObject = rv.srcObject;
+                            shareVideo.play();
+                        }
+
+                        shareName.innerText = currentFriendProfile.name;
+
+                        document.querySelectorAll('.viewer-layer').forEach(e => e.classList.remove('active'));
+                        shareLayer.classList.add('active');
+
+                        showToast(currentFriendProfile.name + " iniciou espelhamento de tela");
+
+                    } else {
+                        rv.style.objectFit = 'cover';
+                        rv.style.background = 'transparent';
+                        rv.style.transform = 'scaleX(-1)';
+                        rl.innerText = currentFriendProfile.name;
+
+                        shareLayer.classList.remove('active');
+                        shareVideo.srcObject = null;
+
+                        document.getElementById('placeholder-screen').classList.add('active');
+
+                        showToast("Espelhamento encerrado");
+                    }
+                    break;
+
+                case 'cam_zoom':
+                    const remoteVid = document.getElementById('remoteVideo');
+                    remoteVid.style.transform = `scale(${data.val})`;
+                    break;
+            }
+        }
+        
+        // NOVO: Função para o peer remoto processar o SFX
+        function handleRemoteSfxPlay(key) {
+            if (sfxMap[key]) {
+                stopCurrentSfx();
+
+                currentSfx = new Audio(sfxMap[key]);
+                currentSfx.volume = sfxVolume;
+                currentSfxKey = key;
+
+                // Toca o som e inicia o tremor (removida a vibração local, conforme a correção)
+                currentSfx.play().catch(e => {
+                    console.error("Erro ao tocar som remoto:", e);
+                });
+
+                if (key === 'horn') {
+                    toggleShakeScreen(true);
+                }
+
+                // ATUALIZADO: Muda para o novo botão de alerta na câmera do amigo
+                const btn = document.querySelector(`#remoteBox .btn-alert-friend`); 
+                if (btn) btn.classList.add('playing');
+
+                // CORREÇÃO 2: Força a parada do som e do tremor após 3 segundos
+                setTimeout(() => {
+                    if (currentSfxKey === key) {
+                        stopCurrentSfx();
+                        toggleShakeScreen(false); // Garante que o tremor pare imediatamente
+                        // Não envia 'sfx_stop' aqui para evitar loop
+                    }
+                }, 3000);
+            }
+        }
+
+        function handleDisconnect() {
+            document.getElementById('remoteVideo').classList.add('hidden');
+            document.getElementById('waitFriend').style.display = 'flex';
+            document.getElementById('saveFriendArea').style.display = 'none';
+            conn = null;
+            currentCall = null;
+            currentFriendProfile = null; // Zera o perfil do amigo
+            resetConnectBtn();
+            renderFriends();
+            // Garante que o botão de alerta pare de piscar/tremer se a conexão cair
+            document.querySelector(`#remoteBox .btn-alert-friend`).classList.remove('playing');
+        }
+
+        function updateFriendUI() {
+            if(!currentFriendProfile) return;
+            let friends = JSON.parse(localStorage.getItem('cine_friends_v4') || "[]");
+
+            if (currentFriendProfile.id !== myProfile.id && !friends.some(f => f.id === currentFriendProfile.id)) {
+                document.getElementById('saveFriendArea').style.display = 'block';
+                document.getElementById('newFriendName').innerText = currentFriendProfile.name;
+                if(!document.getElementById('settingsPanel').classList.contains('open')) {
+                    // Não abre mais o menu de configurações automaticamente
+                }
+            } else {
+                document.getElementById('saveFriendArea').style.display = 'none';
+            }
+        }
+
+        function updateBadge() {
+            // NOVO: Altera para buscar o badge dentro do botão de chat remoto
+            const b = document.getElementById('chatBadge');
+            if(unreadMessages > 0) {
+                b.innerText = unreadMessages > 9 ? '9+' : unreadMessages;
+                b.classList.add('visible');
+                // REMOVIDO: O blinking do botão principal
+                // document.getElementById('btnChatMain').classList.remove('blinking');
+            } else {
+                b.classList.remove('visible');
+                // REMOVIDO: O blinking do botão principal
+                // document.getElementById('btnChatMain').classList.remove('blinking');
+            }
+        }
+
+        function applyMediaState(data) {
+            const remoteVideo = document.getElementById('remoteVideo');
+            const brbOverlay = document.getElementById('beRightBack');
+            const muteText = document.getElementById('remoteMuteText');
+
+            if(data.video === false) { remoteVideo.classList.add('hidden'); brbOverlay.style.display = 'flex'; }
+            else if (data.video === true) { remoteVideo.classList.remove('hidden'); brbOverlay.style.display = 'none'; }
+
+            if(data.audio === false) { muteText.style.display = 'block'; }
+            else if (data.audio === true) { muteText.style.display = 'none'; }
+        }
+
+        function setLeader(isLeader) { amILeader = isLeader; }
+        function formatTime(seconds) { const h = Math.floor(seconds / 3600); const m = Math.floor((seconds % 3600) / 60); const s = Math.floor(seconds % 60); const mStr = m < 10 ? "0"+m : m; const sStr = s < 10 ? "0"+s : s; return h > 0 ? `${h}:${mStr}:${sStr}` : `${mStr}:${sStr}`; }
+
+        function updateProgressBar() {
+            if(isSyncing) return;
+            const type = getCurrentPlayerType();
+            const bar = document.getElementById('progressBar');
+            const timeDisplay = document.getElementById('timeDisplay');
+            let current = 0, total = 0;
+            if(type === 'youtube' && isYtReady && ytPlayer && ytPlayer.getDuration) { current = ytPlayer.getCurrentTime(); total = ytPlayer.getDuration(); }
+            else if (type === 'native') { current = nativeVideo.currentTime; total = nativeVideo.duration; }
+            if(total > 0) { bar.value = (current / total) * 100; timeDisplay.innerText = `${formatTime(current)} / ${formatTime(total)}`; }
+            else { timeDisplay.innerText = "00:00 / 00:00"; }
+        }
+
+        function maskTime(input) { let v = input.value.replace(/\D/g, ''); if (v.length > 6) v = v.slice(0, 6); if (v.length > 4) { input.value = `${v.slice(0,2)}:${v.slice(2,4)}:${v.slice(4)}`; } else if (v.length > 2) { input.value = `${v.slice(0,2)}:${v.slice(2)}`; } else { input.value = v; } }
+        function submitTimeManual() { if(!amILeader) return showToast("Apenas o HOST pode controlar a mídia."); const input = document.getElementById('manualTime'); const parts = input.value.split(':').map(Number); let seconds = 0; if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2]; else if (parts.length === 2) seconds = parts[0] * 60 + parts[1]; else if (parts.length === 1) seconds = parts[0]; else return; const type = getCurrentPlayerType(); if(type === 'native') { nativeVideo.currentTime = seconds; } else if(type === 'youtube') { ytPlayer.seekTo(seconds, true); } input.value = ""; input.blur(); }
+
+        function handleSeek(val) { if(!amILeader) return showToast("Apenas o HOST pode controlar a mídia."); const type = getCurrentPlayerType(); let time = 0; if(type === 'youtube' && ytPlayer) { time = (val / 100) * ytPlayer.getDuration(); ytPlayer.seekTo(time, true); } else if (type === 'native') { time = (val / 100) * nativeVideo.duration; nativeVideo.currentTime = time; } }
+
+        function onYouTubeIframeAPIReady() {
+            ytPlayer = new YT.Player('yt-player', {
+                height: '100%',
+                width: '100%',
+                videoId: '',
+                playerVars: {
+                    'autoplay': 0,
+                    'controls': 1,
+                    'disablekb': 0,
+                    'modestbranding': 1,
+                    'rel': 0,
+                    'origin': window.location.origin
+                },
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange
+                }
+            });
+        }
+
+        function onPlayerReady(event) {
+            isYtReady = true;
+            if(pendingVideoLoad) {
+                if(pendingVideoLoad.type === 'list') ytPlayer.loadPlaylist({list: pendingVideoLoad.id, listType: 'playlist'});
+                else if(pendingVideoLoad.type === 'search') ytPlayer.loadPlaylist({list: pendingVideoLoad.id, listType: 'search'});
+                else ytPlayer.loadVideoById(pendingVideoLoad.id);
+                pendingVideoLoad = null;
+            }
+            if(conn && conn.open) {
+                conn.send({ type: 'request_state' });
+            }
+        }
+
+        function onPlayerStateChange(event) {
+            if(!amILeader || isSyncing) return;
+            const time = ytPlayer.getCurrentTime();
+            if(event.data === YT.PlayerState.PLAYING) { sendData({ type: 'yt_sync', action: 'play', time: time }); updatePlayIcon(true); }
+            else if (event.data === YT.PlayerState.PAUSED) { sendData({ type: 'yt_sync', action: 'pause', time: time }); updatePlayIcon(false); }
+            else if (event.data === YT.PlayerState.BUFFERING) { sendData({ type: 'yt_sync', action: 'buffering', time: time }); }
+            if (event.data === YT.PlayerState.ENDED) playNextInQueue();
+        }
+
+        function applyYTSync(d) {
+            if(!ytPlayer || !ytPlayer.seekTo) return;
+            isSyncing = true;
+            if(d.action === 'play') {
+                if(Math.abs(ytPlayer.getCurrentTime() - d.time) > 1) ytPlayer.seekTo(d.time, true);
+                ytPlayer.playVideo(); updatePlayIcon(true);
+            }
+            else if (d.action === 'pause') {
+                ytPlayer.pauseVideo();
+                if(Math.abs(ytPlayer.getCurrentTime() - d.time) > 1) ytPlayer.seekTo(d.time, true);
+                updatePlayIcon(false);
+            }
+            else if (d.action === 'buffering' || d.action === 'seek') { ytPlayer.seekTo(d.time, true); }
+            setTimeout(() => isSyncing = false, 500);
+        }
+
+        function getCurrentPlayerType() {
+            if (document.getElementById('native-player-layer').classList.contains('active')) return 'native';
+            if (document.getElementById('yt-layer').classList.contains('active') && isYtReady) return 'youtube';
+            if (document.getElementById('browser-layer').classList.contains('active')) return 'browser';
+            if (document.getElementById('share-layer').classList.contains('active')) return 'share'; // Adicionado
+            return null;
+        }
+
+        function seekRelative(seconds) {
+            if(!amILeader) return showToast("Apenas o HOST pode controlar a mídia.");
+            const type = getCurrentPlayerType();
+            if(type === 'native') nativeVideo.currentTime += seconds;
+            else if(type === 'youtube') ytPlayer.seekTo(ytPlayer.getCurrentTime() + seconds, true);
+            else if(type === 'share') showToast("O host da tela compartilhada controla a mídia.");
+        }
+
+        function togglePlayPause() {
+            if(!amILeader) return showToast("Apenas o HOST pode controlar a mídia.");
+            const type = getCurrentPlayerType();
+            if(type === 'native') { 
+                if(nativeVideo.paused) { nativeVideo.play(); updatePlayIcon(true); showToast("Reproduzindo Vídeo"); } 
+                else { nativeVideo.pause(); updatePlayIcon(false); showToast("Vídeo Pausado"); } 
+            }
+            else if(type === 'youtube') { 
+                if(ytPlayer.getPlayerState() === 1) { ytPlayer.pauseVideo(); updatePlayIcon(false); showToast("Vídeo Pausado"); } 
+                else { ytPlayer.playVideo(); updatePlayIcon(true); showToast("Reproduzindo Vídeo"); } 
+            }
+            else if(type === 'share') showToast("O host da tela compartilhada controla a mídia.");
+        }
+
+        function updatePlayIcon(isPlaying) {
+            const btn = document.getElementById('btnPlayPause');
+            btn.innerHTML = isPlaying ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play"></i>';
+        }
+
+        function toggleMixer() { const m = document.getElementById('notificationMixer'); m.style.display = m.style.display === 'flex' ? 'none' : 'flex'; }
+
+        function setVideoVolume(v) { nativeVideo.volume=v; if(ytPlayer) ytPlayer.setVolume(v*100); }
+
+        function setVoiceVolume(v) {
+            const video = document.getElementById('remoteVideo');
+            if(video) {
+                video.volume = parseFloat(v);
+                if(parseFloat(v) > 0) video.muted = false;
+            }
+        }
+
+        function setTTSVolume(v) { ttsVolume = parseFloat(v); }
+        function setSFXVolume(v) { sfxVolume = parseFloat(v); }
+
+        function toggleVideoMute() {
+            if(!amILeader) return showToast("Apenas o HOST pode controlar a mídia.");
+            const type = getCurrentPlayerType();
+            let isMuted = false;
+            if(type === 'native') { nativeVideo.muted = !nativeVideo.muted; isMuted = nativeVideo.muted; }
+            else if(type === 'youtube') { ytPlayer.isMuted() ? ytPlayer.unMute() : ytPlayer.mute(); isMuted = ytPlayer.isMuted(); }
+
+            const btn = document.getElementById('btnMute');
+            btn.innerHTML = isMuted ? '<i class="fa-solid fa-volume-xmark"></i>' : '<i class="fa-solid fa-volume-high"></i>';
+
+            // NOVO: Mensagens de toast mais profissionais
+            showToast(isMuted ? "Áudio do Vídeo Desativado" : "Áudio do Vídeo Ativado");
+        }
+
+        function toggleSearchBar() {
+            const bar = document.getElementById('urlBar');
+            const btn = document.getElementById('btnSearchToggle');
+            bar.classList.toggle('visible');
+            btn.classList.toggle('btn-active');
+            if(bar.classList.contains('visible')) { document.getElementById('mainInput').focus(); }
+        }
+
+        function processInput() {
+            let val = document.getElementById('mainInput').value.trim();
+            if(!val) return;
+
+            // --- DETECÇÃO AUTOMÁTICA DE TIPO ---
+
+            setLeader(true);
+            sendData({ type: 'claim_leader' });
+
+            // 1. É YouTube?
+            const listId = extractYouTubeListID(val);
+            const ytid = extractYouTubeID(val);
+            if(listId || ytid) {
+                if(!val.startsWith('http')) val = 'https://' + val;
+                loadVideo(val);
+                // CHAVE DA SINCRONIZAÇÃO: Enviar o comando 'navigate' garante que o amigo carregue o mesmo link.
+                sendData({ type: 'navigate', url: val }); 
+                closeMenus();
+                toggleSearchBar();
+                return;
+            }
+
+            // 2. É arquivo de mídia direta? (MP4, MKV, etc)
+            const isMediaFile = /\.(mp4|mkv|webm|ogg|mov)$/i.test(val);
+            if (isMediaFile) {
+                if(!val.startsWith('http')) val = 'https://' + val;
+                loadVideo(val);
+                sendData({ type: 'navigate', url: val });
+                closeMenus();
+                toggleSearchBar();
+                return;
+            }
+
+            // 3. É um site genérico (URL) ou um termo de pesquisa?
+            // Critério de URL mais rigoroso para dar prioridade à pesquisa no Google.
+            const isUrl = (/^(http|https):\/\/[^ "]+$/.test(val) || /^www\./.test(val) || (val.includes('.') && val.length > 5 && !val.includes(' '))) && !isCommonSearchTerm(val);
+            
+            if (isUrl) {
+                if(!val.startsWith('http')) val = 'https://' + val;
+                loadVideo(val); // Redireciona para loadVideo que chamará openInternalBrowser
+                sendData({ type: 'navigate', url: val });
+                closeMenus();
+                toggleSearchBar();
+                return;
+            }
+
+            // ** MODIFICAÇÃO SOLICITADA: Trata como Pesquisa e NÃO NAVEGA, apenas avisa. **
+            
+            // Verifica se é uma pesquisa (termo simples ou palavra-chave detectada)
+            // Se chegou até aqui e não é URL/YouTube/Mídia, é tratado como pesquisa simples.
+            showToast("Apenas links diretos, MP4 ou YouTube são suportados. Adicione um link válido!");
+            
+            // Não faz mais nada, não navega, e a barra de pesquisa permanece aberta.
+            // Se o usuário quiser pesquisar em um browser, ele pode digitar a URL de um motor de busca.
+
+        }
+        
+        // NOVO: Função para detectar se é um termo de pesquisa comum, mesmo que contenha um ponto
+        function isCommonSearchTerm(text) {
+             const lower = text.toLowerCase();
+             // Exemplo: 'fotos de gatos', 'filmes romanticos', 'musicas pop'
+             const commonKeywords = ['romântico', 'romanticos', 'filmes', 'fotos', 'músicas', 'musicas', 'gatos', 'cães', 'cachorros', 'receitas', 'noticias', 'notícias', 'noticia', 'notícia', 'trailer'];
+             
+             // Condições para ser considerado termo de pesquisa:
+             // 1. Contém uma palavra-chave comum.
+             if (commonKeywords.some(keyword => lower.includes(keyword))) return true;
+
+             // 2. Não se parece com um domínio real: (apenas um ponto, com final curto)
+             const looksLikeDomain = (lower.match(/\./g) || []).length === 1 && lower.split('.').pop().length <= 3 && lower.length < 15;
+             
+             // Se não parecer um domínio e não contiver 'http', considera como pesquisa
+             return !looksLikeDomain && !lower.includes('://');
+        }
+        // FIM NOVO
+
+        function extractYouTubeListID(url) { const m = url.match(/[?&]list=([^#\&\?]+)/); return m ? m[1] : null; }
+        function extractYouTubeID(url) { const m = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i); return m ? m[1] : null; }
+
+        function loadVideo(url) {
+            document.querySelectorAll('.viewer-layer').forEach(e=>e.classList.remove('active'));
+
+            // NOVO: Garante que o menu superior volte ao estado padrão ao carregar outro tipo de mídia
+            toggleHeader(false); 
+
+            // --- TRATAMENTO DE BUSCA ---
+            if(url.startsWith('search:')) {
+                const query = url.split('search:')[1];
+                document.getElementById('yt-layer').classList.add('active');
+                if(isYtReady && ytPlayer) {
+                    ytPlayer.loadPlaylist({
+                        listType: 'search',
+                        list: query
+                    });
+                } else {
+                    pendingVideoLoad = { type: 'search', id: query };
+                }
+                nativeVideo.pause();
+                return;
+            }
+
+            const listId = extractYouTubeListID(url);
+            const ytid = extractYouTubeID(url);
+
+            if(listId) {
+                document.getElementById('yt-layer').classList.add('active');
+                if(isYtReady && ytPlayer) ytPlayer.loadPlaylist({list: listId, listType: 'playlist'});
+                else pendingVideoLoad = { type: 'list', id: listId };
+                nativeVideo.pause();
+            }
+            else if(ytid) {
+                document.getElementById('yt-layer').classList.add('active');
+                if(isYtReady && ytPlayer) ytPlayer.loadVideoById(ytid);
+                else pendingVideoLoad = { type: 'video', id: ytid };
+                nativeVideo.pause();
+            }
+            else if (/\.(mp4|webm|ogg|mov)$/i.test(url)) {
+                const layer = document.getElementById('native-player-layer');
+                layer.classList.add('active');
+                nativeVideo.src = url;
+                nativeVideo.play();
+                if(isYtReady && ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
+            }
+            else {
+                // Fallback para Browser se não for mídia nem YT
+                openInternalBrowser(url);
+            }
+        }
+
+        // --- MODO BROWSER ---
+
+        function openInternalBrowser(url) {
+            document.querySelectorAll('.viewer-layer').forEach(e => e.classList.remove('active'));
+            document.getElementById('browser-layer').classList.add('active');
+
+            const frame = document.getElementById('browser-frame');
+            frame.src = url;
+
+            // --- CORREÇÃO: PAUSA MÍDIA EM SEGUNDO PLANO ---
+            if (isYtReady && ytPlayer && ytPlayer.pauseVideo) {
+                ytPlayer.pauseVideo();
+            }
+            if (nativeVideo) {
+                nativeVideo.pause();
+            }
+            // --- FIM CORREÇÃO ---
+            
+            // NOVO: Esconde o menu superior automaticamente (resetando o timer)
+            clearTimeout(headerTimeout);
+            headerTimeout = setTimeout(() => {
+                toggleHeader(true); // Esconde o header após 3 segundos
+            }, 3000); 
+            
+            // NOVO: Exibe o header no modo browser e o botão de reabrir
+            toggleHeader(false); 
+            
+            showToast("Navegador Aberto");
+        }
+
+        function closeBrowser() {
+            document.getElementById('browser-layer').classList.remove('active');
+            document.getElementById('placeholder-screen').classList.add('active');
+
+            // NOVO: Garante que o timer de auto-hide pare e o header seja exibido
+            clearTimeout(headerTimeout);
+            toggleHeader(false);
+        }
+
+        function toggleAdBlock() {
+            const frame = document.getElementById('browser-frame');
+            const btn = document.getElementById('btnAdBlock');
+            const isCurrentlyOn = !btn.classList.contains('inactive');
+            const currentUrl = frame.src;
+
+            if(isCurrentlyOn) {
+                btn.classList.add('inactive');
+                btn.innerHTML = '<i class="fa-solid fa-shield-slash"></i> Bloqueio: OFF';
+                btn.style.background = '#c0392b';
+                frame.removeAttribute('sandbox');
+                showToast("Popups Permitidos");
+            } else {
+                btn.classList.remove('inactive');
+                btn.innerHTML = '<i class="fa-solid fa-shield-halved"></i> Bloqueio: ON';
+                btn.style.background = '#27ae60';
+                frame.setAttribute('sandbox', 'allow-forms allow-scripts allow-same-origin allow-presentation allow-encrypted-media');
+                showToast("Popups Bloqueados");
+            }
+            if(currentUrl) frame.src = currentUrl;
+        }
+
+        function typeEmoji(str) { const input = document.getElementById('chatInput'); input.value += str + " "; input.focus(); }
+
+        function parseMSN(text) {
+            let processed = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            const sortedKeys = Object.keys(msnMap).sort((a, b) => b.length - a.length);
+            for (const key of sortedKeys) {
+                const url = msnMap[key];
+                const escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const regex = new RegExp(escapedKey, 'gi');
+                processed = processed.replace(regex, `<img src="${url}" class="msn-sticker" onerror="tryReloadSticker(this)">`);
+            }
+            return processed;
+        }
+
+        function sendChat() { const input = document.getElementById('chatInput'); const rawTxt = input.value.trim(); if(!rawTxt) return; addChatMsg(rawTxt, true); sendData({ type: 'chat', msg: rawTxt }); input.value = ""; }
+        function addChatMsg(m, me) { const d = document.createElement('div'); let checkEmoji = m.trim(); const isOnlyEmoji = Object.keys(msnMap).some(k => checkEmoji.toLowerCase() === k.toLowerCase()); d.className = `msg ${me?'me':'them'} ${isOnlyEmoji ? 'anim-emoji' : ''}`; d.innerHTML = parseMSN(m); const log = document.getElementById('chatLog'); log.appendChild(d); log.scrollTop = log.scrollHeight; }
+
+        function toggleChat() {
+            const body = document.body;
+            const chatPanel = document.getElementById('chatPanel');
+            const wasOpen = chatPanel.classList.contains('open');
+
+            closeMenus(); // Garante que outros painéis fechem
+
+            if (!wasOpen) {
+                // ABRINDO O CHAT BALÃO
+                chatPanel.classList.add('open');
+                unreadMessages = 0;
+                updateBadge();
+                // REMOVIDO: O blinking do botão principal
+                // document.getElementById('btnChatMain').classList.remove('blinking');
+
+                // Se não houver posição salva, usa a transformação de centralização inicial
+                if(!localStorage.getItem('chat_pos')) {
+                     chatPanel.style.transform = 'translate(-50%, -50%)';
+                } else {
+                     // Se houver posição salva (carregada em loadChatPosition), remove a transformação
+                     chatPanel.style.transform = 'none';
+                }
+
+            } else {
+                // FECHANDO O CHAT BALÃO
+                chatPanel.classList.remove('open');
+            }
+        }
+
+        function toggleMenu(id) { 
+            const p = document.getElementById(id+'Panel'); 
+            const was = p.classList.contains('open'); 
+            closeMenus(); 
+            if(!was) { 
+                p.classList.add('open'); 
+                document.getElementById('overlay').classList.add('active'); 
+            } 
+        }
+
+        function closeMenus() {
+            document.querySelectorAll('.side-panel').forEach(p => p.classList.remove('open'));
+            document.getElementById('overlay').classList.remove('active');
+            // NOVO: Usa o ID do mixer atualizado
+            document.getElementById('notificationMixer').style.display = 'none'; 
+        }
+
+        async function fetchMovieData(filename) {
+            let query = filename
+                .replace(/\.(mp4|mkv|avi|webm)$/i, '')
+                .replace(/[._]/g, ' ')
+                .replace(/\b(1080p|720p|480p|BluRay|WEB-DL|HDRip|x264|x265|AAC|5\.1)\b/gi, '')
+                .replace(/\(\d{4}\)/, '')
+                .trim();
+
+            const yearMatch = query.match(/(\d{4})/);
+            let year = yearMatch ? yearMatch[0] : '';
+            if(year) query = query.replace(year, '').trim();
+
+            console.log("Buscando filme:", query);
+
+            try {
+                const res = await fetch(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&language=pt-BR&page=1${year ? '&year='+year : ''}`);
+                const data = await res.json();
+
+                if (data.results && data.results.length > 0) {
+                    const movie = data.results[0];
+                    return {
+                        found: true,
+                        title: movie.title,
+                        overview: movie.overview,
+                        poster: movie.poster_path ? `https://image.tmdb.org/t/p/w92${movie.poster_path}` : null,
+                        year: movie.release_date ? movie.release_date.split('-')[0] : ''
+                    };
+                }
+            } catch (e) {
+                console.error("Erro TMDB:", e);
+            }
+            return { found: false };
+        }
+
+        async function addToPlaylist() {
+            const input = document.getElementById('mainInput');
+            const val = input.value.trim();
+            if(!val) return;
+
+            let title = val;
+            let poster = null;
+            let overview = null;
+            let year = null;
+            let isMovieFile = val.match(/\.(mp4|mkv|webm)$/i);
+
+            if (isMovieFile) {
+                showToast("Buscando dados do filme...");
+                const filename = val.split('/').pop();
+                const meta = await fetchMovieData(filename);
+
+                if (meta.found) {
+                    title = meta.title;
+                    poster = meta.poster;
+                    overview = meta.overview;
+                    year = meta.year;
+                    showToast("Dados Encontrados!");
+                }
+            } else {
+                if(extractYouTubeListID(val)) title = "Playlist do YouTube";
+                else if(extractYouTubeID(val)) title = "Vídeo do YouTube";
+                else if(val.length > 20) title = val.substring(0, 20) + "...";
+            }
+
+            const newItem = { url: val, title, poster, overview, year };
+            playlist.push(newItem);
+
+            renderPlaylist();
+
+            sendData({ type: 'playlist_sync', playlist: playlist });
+
+            if(!poster && !isMovieFile) showToast("Item Adicionado à Playlist");
+            input.value = "";
+            input.focus();
+        }
+
+        function renderPlaylist() {
+            const c = document.getElementById('playlistContainer');
+            c.innerHTML = "";
+
+            if(playlist.length === 0) {
+                c.innerHTML = '<div style="text-align:center; color:#57606f; margin-top:20px;"><p>Lista Vazia.</p><small>Adicione links MP4 para ver infos do filme.</small></div>';
+                return;
+            }
+
+            playlist.forEach((item, i) => {
+                const activeClass = i === currentPlayIndex ? 'active' : '';
+                const posterImg = item.poster ? `<img src="${item.poster}" class="pl-poster">` : `<div class="pl-poster" style="display:flex;align-items:center;justify-content:center;color:#333;"><i class="fa-solid fa-film" style="font-size: 1.5rem; color:#57606f;"></i></div>`;
+                const metaInfo = item.year ? `<span class="pl-meta">${item.year}</span>` : '';
+                const overviewTxt = item.overview ? `<div class="pl-overview">${item.overview}</div>` : '';
+
+                c.innerHTML += `
+                    <div class="playlist-item ${activeClass}" onclick="playFromPlaylist(${i})">
+                        ${posterImg}
+                        <div class="pl-content">
+                            <div class="pl-title">${i+1}. ${item.title}</div>
+                            ${metaInfo}
+                            ${overviewTxt}
+                        </div>
+                        <button class="btn-pl-remove" onclick="event.stopPropagation();removeFromPlaylist(${i})" title="Remover">
+                             <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>`;
+            });
+        }
+
+        function playFromPlaylist(i) {
+            currentPlayIndex = i;
+            const val = playlist[i].url;
+            if(!val) return;
+            setLeader(true); sendData({type:'claim_leader'});
+
+            // Alteração: Garantir que todos os itens comecem a reprodução (incluindo 'search:').
+            let urlToLoad = val;
+            if(val.match(/^(http|www)/)) {
+                urlToLoad = val.startsWith('http') ? val : 'https://' + val;
+            }
+
+            loadVideo(urlToLoad);
+            sendData({ type: 'navigate', url: urlToLoad });
+            closeMenus();
+
+            renderPlaylist();
+        }
+
+        function removeFromPlaylist(i) {
+            playlist.splice(i, 1);
+            renderPlaylist();
+            sendData({ type: 'playlist_sync', playlist: playlist });
+        }
+
+        function playNextInQueue() { if(playlist.length > currentPlayIndex + 1) playFromPlaylist(currentPlayIndex + 1); }
+
+        function openExternalBrowser() { window.open(document.getElementById('browser-frame').src, '_blank'); }
+
+        function setupNativeListeners() {
+            nativeVideo.onplay = () => { if(amILeader && !isSyncing) { sendData({ type: 'native_sync', action: 'play', time: nativeVideo.currentTime }); updatePlayIcon(true); showToast("Reproduzindo Arquivo Local"); } };
+            nativeVideo.onpause = () => { if(amILeader && !isSyncing) { sendData({ type: 'native_sync', action: 'pause' }); updatePlayIcon(false); showToast("Vídeo Pausado"); } };
+            nativeVideo.onseeked = () => { if(amILeader && !isSyncing) sendData({ type: 'native_sync', action: 'seek', time: nativeVideo.currentTime }); };
+            nativeVideo.onended = () => { if(amILeader) playNextInQueue(); };
+        }
+        function applyNativeSync(d) {
+            isSyncing = true;
+            if(d.action==='play') { if(Math.abs(nativeVideo.currentTime-d.time)>1) nativeVideo.currentTime=d.time; nativeVideo.play(); updatePlayIcon(true); }
+            else if(d.action==='pause') { nativeVideo.pause(); updatePlayIcon(false); }
+            else if(d.action==='seek') nativeVideo.currentTime=d.time;
+            setTimeout(()=>isSyncing=false,500);
+        }
+
+        function stopCurrentSfx() {
+            if (currentSfx) {
+                currentSfx.pause();
+                currentSfx.currentTime = 0;
+            }
+            // ATUALIZADO: Foca no botão da câmera remota
+            document.querySelector(`#remoteBox .btn-alert-friend`).classList.remove('playing');
+            currentSfxKey = null;
+            // CORREÇÃO 2: Garante que o tremor pare ao parar o SFX
+            toggleShakeScreen(false);
+        }
+
+        // CORREÇÃO 1 & 2: Função playSfx com tratamento sincronizado de som, tremor e DURAÇÃO FIXA (3 segundos)
+        function playSfx(key) {
+            // ATUALIZADO: Foca no botão da câmera remota
+            const btn = document.querySelector(`#remoteBox .btn-alert-friend`); 
+            if (!conn || !conn.open) return showToast("Conecte-se com um amigo para chamá-lo.");
+            const duration = 3000; // 3 segundos
+
+            if (currentSfxKey === key) {
+                // Se estiver tocando, para
+                if (currentSfx && !currentSfx.paused) {
+                    stopCurrentSfx();
+                    sendData({ type: 'sfx_stop', key: key });
+                    return;
+                }
+            }
+
+            if (sfxMap[key]) {
+                stopCurrentSfx();
+
+                currentSfx = new Audio(sfxMap[key]);
+                currentSfx.volume = sfxVolume;
+
+                currentSfx.play().catch(e => {
+                    console.error("Erro ao tocar som:", e);
+                    showToast("Erro ao carregar áudio de efeito. Tente novamente."); 
+                });
+
+                currentSfxKey = key;
+                if (btn) btn.classList.add('playing');
+                
+                // --- NOVO: Lógica do Tremor (Ativado) ---
+                if (key === 'horn') {
+                    toggleShakeScreen(true);
+                    // Vibração Removida (Conforme solicitado)
+                }
+                // --- Fim Tremor ---
+
+                // NOVO: Força a parada do som e do tremor após a duração fixa
+                setTimeout(() => {
+                    if (currentSfxKey === key) {
+                        stopCurrentSfx();
+                        toggleShakeScreen(false); 
+                        sendData({ type: 'sfx_stop', key: key }); // Sinaliza a parada para o amigo
+                    }
+                }, duration);
+
+
+                // Envia sinal ao peer. O peer remoto também para após 3 segundos.
+                sendData({ type: 'sfx_play', key: key });
+            }
+        }
+        
+        // --- NOVO: FUNÇÃO PARA CONTROLAR O TREMOR DA TELA ---
+        function toggleShakeScreen(active) {
+            const body = document.body;
+            if (active) {
+                body.classList.add('shake-screen');
+            } else {
+                body.classList.remove('shake-screen');
+            }
+        }
+        // --- FIM TREMOR ---
+        
+        // ----------------------------------------------------------------------
+        // FUNÇÃO UNIFICADA: Alterna a visibilidade dos controles do player e do menu superior
+        // ----------------------------------------------------------------------
+        function togglePlayerUI(hide) {
+            const controls = document.querySelector('.custom-controls');
+            const header = document.getElementById('main-header');
+            const reopenBtn = document.getElementById('btnReopenControls');
+            const toggleBtnIcon = document.querySelector('#btnToggleControls i');
+            
+            // Ocultar
+            if (hide) {
+                controls.classList.add('hidden');
+                header.classList.add('hidden');
+                reopenBtn.classList.add('visible');
+                
+                // Altera o ícone do botão principal para o de reexibir (chevron-up)
+                if(toggleBtnIcon) toggleBtnIcon.classList.replace('fa-chevron-down', 'fa-chevron-up'); 
+                
+                showToast("Controles e Menu Ocultos");
+                
+            // Reexibir
+            } else {
+                controls.classList.remove('hidden');
+                header.classList.remove('hidden');
+                reopenBtn.classList.remove('visible');
+                
+                // Restaura o ícone do botão principal para o de ocultar (chevron-down)
+                if(toggleBtnIcon) toggleBtnIcon.classList.replace('fa-chevron-up', 'fa-chevron-down');
+                
+                // Garante que o timer de auto-hide pare
+                clearTimeout(headerTimeout);
+                
+                showToast("Controles e Menu Exibidos");
+            }
+        }
+        // ----------------------------------------------------------------------
+
+        // ----------------------------------------------------------------------
+        // FUNÇÃO MODIFICADA: CONTROLE DE OCULTAR/REEXIBIR O MENU SUPERIOR
+        // ----------------------------------------------------------------------
+        function toggleHeader(hide) {
+            const header = document.getElementById('main-header');
+            const urlBar = document.getElementById('urlBar');
+            
+            const shouldHide = (hide === undefined) ? !header.classList.contains('hidden') : hide;
+
+            if (shouldHide) {
+                // Ocultar
+                header.classList.add('hidden');
+                urlBar.classList.remove('visible'); // Garante que a barra de URL também se esconda
+                
+                // No modo browser, o botão de reabrir do player já lida com o reexibir
+                
+            } else {
+                // Reexibir
+                header.classList.remove('hidden');
+                
+                // NOVO: Garante que o timer de auto-hide pare
+                clearTimeout(headerTimeout);
+            }
+        }
+        // ----------------------------------------------------------------------
+
+
+        // --- FUNÇÕES DRAG AND DROP / REDIMENSIONAMENTO ---
+
+        function setupDragAndResize() {
+            const chatPanel = document.getElementById('chatPanel');
+            const chatHeader = document.getElementById('chatHeader');
+            const handles = document.querySelectorAll('.resize-handle');
+
+            // 1. ARRASTAR
+            chatHeader.addEventListener('mousedown', startDrag);
+            chatHeader.addEventListener('touchstart', startDrag, { passive: true });
+
+            function startDrag(e) {
+                // Não iniciar drag se clicar no botão fechar ou em outro elemento interativo
+                if (e.target.closest('.btn-close-fixed')) return; // Removido .header-sfx-btn
+
+                isDragging = true;
+                document.body.classList.add('is-dragging');
+                startX = e.clientX || e.touches[0].clientX;
+                startY = e.clientY || e.touches[0].clientY;
+
+                // Prepara o painel para usar top/left/width/height fixos
+                if (chatPanel.classList.contains('open')) {
+                    chatPanel.style.transition = 'none';
+                    const rect = chatPanel.getBoundingClientRect();
+                    startLeft = rect.left;
+                    startTop = rect.top;
+
+                    chatPanel.style.top = startTop + 'px';
+                    chatPanel.style.left = startLeft + 'px';
+                    chatPanel.style.transform = 'none';
+                    chatPanel.style.position = 'fixed';
+                }
+            }
+
+            // 2. REDIMENSIONAR
+            handles.forEach(handle => {
+                handle.addEventListener('mousedown', startResize);
+                handle.addEventListener('touchstart', startResize, { passive: true });
+            });
+
+            function startResize(e) {
+                isResizing = true;
+                document.body.classList.add('is-dragging');
+                resizeHandleType = e.target.closest('.resize-handle').getAttribute('data-handle');
+
+                startX = e.clientX || e.touches[0].clientX;
+                startY = e.clientY || e.touches[0].clientY;
+
+                // Prepara o painel para usar top/left/width/height fixos
+                if (chatPanel.classList.contains('open')) {
+                    chatPanel.style.transition = 'none';
+                    const rect = chatPanel.getBoundingClientRect();
+                    startWidth = rect.width;
+                    startHeight = rect.height;
+                    startLeft = rect.left;
+                    startTop = rect.top;
+
+                    chatPanel.style.top = startTop + 'px';
+                    chatPanel.style.left = startLeft + 'px';
+                    chatPanel.style.width = startWidth + 'px';
+                    chatPanel.style.height = startHeight + 'px';
+                    chatPanel.style.transform = 'none';
+                }
+
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            // 3. MOVER E REDIMENSIONAR (MOUSE/TOUCH MOVE)
+            document.addEventListener('mousemove', doDragOrResize);
+            document.addEventListener('touchmove', doDragOrResize, { passive: false });
+
+            function doDragOrResize(e) {
+                if (!isDragging && !isResizing) return;
+
+                e.preventDefault();
+
+                const currentX = e.clientX || e.touches[0].clientX;
+                const currentY = e.clientY || e.touches[0].clientY;
+                const deltaX = currentX - startX;
+                const deltaY = currentY - startY;
+
+                const panel = document.getElementById('chatPanel');
+                const maxW = window.innerWidth * 0.95;
+                const maxH = window.innerHeight * 0.95;
+
+                if (isDragging) {
+                    let newLeft = startLeft + deltaX;
+                    let newTop = startTop + deltaY;
+
+                    // Limita o arrastar para não sair da tela
+                    newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - panel.offsetWidth));
+                    newTop = Math.max(0, Math.min(newTop, window.innerHeight - panel.offsetHeight));
+
+                    panel.style.left = newLeft + 'px';
+                    panel.style.top = newTop + 'px';
+                }
+
+                else if (isResizing) {
+                    let newWidth = startWidth;
+                    let newHeight = startHeight;
+                    let newLeft = startLeft;
+                    let newTop = startTop;
+
+                    switch (resizeHandleType) {
+                        case 'br': // Inferior Direito
+                            newWidth = Math.max(MIN_WIDTH, startWidth + deltaX);
+                            newHeight = Math.max(MIN_HEIGHT, startHeight + deltaY);
+                            break;
+                        case 'bl': // Inferior Esquerdo
+                            newWidth = Math.max(MIN_WIDTH, startWidth - deltaX);
+                            newHeight = Math.max(MIN_HEIGHT, startHeight + deltaY);
+                            newLeft = startLeft + (startWidth - newWidth);
+                            break;
+                        case 'tr': // Superior Direito
+                            newWidth = Math.max(MIN_WIDTH, startWidth + deltaX);
+                            newHeight = Math.max(MIN_HEIGHT, startHeight - deltaY);
+                            newTop = startTop + (startHeight - newHeight);
+                            break;
+                        case 'tl': // Superior Esquerdo
+                            newWidth = Math.max(MIN_WIDTH, startWidth - deltaX);
+                            newHeight = Math.max(MIN_HEIGHT, startHeight - deltaY);
+                            newLeft = startLeft + (startWidth - newWidth);
+                            newTop = startTop + (startHeight - newHeight);
+                            break;
+                    }
+
+                    // Limita o redimensionamento para não sair da tela
+                    if (newLeft + newWidth > window.innerWidth) newWidth = window.innerWidth - newLeft;
+                    if (newTop + newHeight > window.innerHeight) newHeight = window.innerHeight - newTop;
+
+                    panel.style.width = Math.min(maxW, newWidth) + 'px';
+                    panel.style.height = Math.min(maxH, newHeight) + 'px';
+                    panel.style.left = newLeft + 'px';
+                    panel.style.top = newTop + 'px';
+                }
+            }
+
+            // 4. FINALIZAR (MOUSE/TOUCH UP)
+            document.addEventListener('mouseup', stopDragOrResize);
+            document.addEventListener('touchend', stopDragOrResize);
+            document.addEventListener('touchcancel', stopDragOrResize);
+
+            function stopDragOrResize() {
+                if (isDragging || isResizing) {
+                    isDragging = false;
+                    isResizing = false;
+                    document.body.classList.remove('is-dragging');
+                    chatPanel.style.transition = '';
+
+                    // Armazena a nova posição para persistência
+                    localStorage.setItem('chat_pos', JSON.stringify({
+                        left: chatPanel.style.left,
+                        top: chatPanel.style.top,
+                        width: chatPanel.style.width,
+                        height: chatPanel.style.height
+                    }));
+                }
+            }
+        }
+
+        // --- FIM FUNÇÕES DRAG AND DROP / REDIMENSIONAMENTO ---
+
+        function sendData(o) { if(conn&&conn.open) conn.send(o); }
+        function logout() { localStorage.removeItem('cine_session_v4'); location.reload(); }
+        function copyId() { navigator.clipboard.writeText(myProfile.id); showToast("ID Copiado"); }
+        function showToast(m) { const t=document.getElementById('toast'); t.innerText=m; t.style.display='block'; setTimeout(()=>t.style.display='none',2000); }
+
+        function saveCurrentFriend() {
+            if(!currentFriendProfile) return;
+            let s = JSON.parse(localStorage.getItem('cine_friends_v4')||"[]");
+            if(!s.some(f=>f.id === currentFriendProfile.id)) {
+                s.push(currentFriendProfile);
+                localStorage.setItem('cine_friends_v4', JSON.stringify(s));
+                renderFriends();
+                updateFriendUI();
+                showToast("Amigo Salvo!");
+            }
+        }
+
+        function disconnectFriend() {
+            if(conn && conn.open) conn.close();
+            if(currentCall) currentCall.close();
+            currentCall = null;
+        }
+
+        function renderFriends() {
+            document.getElementById('friendsList').innerHTML = (JSON.parse(localStorage.getItem('cine_friends_v4')||"[]")).map(f => {
+                const isConnected = conn && conn.peer === f.id;
+                const status = isConnected ? '<span style="color:var(--success); font-weight:bold;">ONLINE</span>' : '<span style="color:#666;">OFFLINE</span>';
+                
+                // MODIFICADO: Substitui o botão 'CONVIDAR' para chamar a função `inviteFriend`
+                const button = isConnected ?
+                    `<button onclick="disconnectFriend()" class="btn-remove-friend" style="width:75px; background:#666; font-weight:normal;">
+                        <i class="fa-solid fa-xmark"></i> SAIR
+                    </button>` :
+                    `<button onclick="inviteFriend('${f.id}')" style="width:75px; padding:4px; background:var(--accent); border:none; color:black; font-weight:bold; border-radius:4px; cursor:pointer; font-size:0.75rem;">
+                        <i class="fa-solid fa-bell" style="font-size:0.75rem; color:black; margin-right: 3px;"></i> CONVIDAR
+                    </button>`;
+
+                return `<div style="display:flex; justify-content:space-between; background:#0b1420; padding:8px; border-radius:4px; margin-bottom:5px; align-items:center;">
+                            <div style="display:flex;align-items:center;gap:5px;">
+                                <img src="${f.pic}" style="width:20px;height:20px;border-radius:50%">
+                                <div style="display:flex;flex-direction:column;font-size:0.8rem;">
+                                    <span>${f.name}</span>
+                                    ${status}
+                                </div>
+                            </div>
+                            <div style="display:flex;gap:5px;">
+                                ${button}
+                                <button onclick="removeFriend('${f.id}')" class="btn-remove-friend">
+                                    <i class="fa-solid fa-trash-can"></i> EXCLUIR
+                                </button>
+                            </div>
+                        </div>`;
+            }).join('');
+        }
+
+        // ----------------------------------------------------------------------
+        // FUNÇÃO CORRIGIDA: Adiciona a confirmação ao excluir um amigo
+        // ----------------------------------------------------------------------
+        function removeFriend(id) {
+            // 1. Busca a lista atual
+            let s = JSON.parse(localStorage.getItem('cine_friends_v4') || "[]");
+            
+            // 2. Encontra o nome do amigo para mostrar na mensagem
+            let friend = s.find(f => f.id === id);
+            let name = friend ? friend.name : 'este amigo';
+
+            // 3. Exibe o aviso de confirmação do navegador
+            if (confirm(`Tem certeza que deseja excluir ${name} da sua lista? Esta ação não pode ser desfeita.`)) {
+                // Se o usuário clicar em "OK", executa a exclusão
+                localStorage.setItem('cine_friends_v4', JSON.stringify(s.filter(f => f.id !== id)));
+                renderFriends();
+                updateFriendUI();
+                showToast("Amigo removido.");
+            }
+        }
+        // ----------------------------------------------------------------------
+
+
+        function toggleMedia(t) {
+            if(myStream) {
+                const isVideo = t === 'video';
+                // MANTIDO: Aviso sobre compartilhamento de tela (se o amigo estiver compartilhando, por exemplo)
+                if(isVideo && isScreenSharing) return showToast("Desative o compartilhamento de tela primeiro.");
+
+                const track = isVideo ? myStream.getVideoTracks()[0] : myStream.getAudioTracks()[0];
+                track.enabled = !track.enabled;
+
+                if(isVideo) isVideoOn = track.enabled;
+                else isAudioOn = track.enabled;
+
+                updateLocalMediaUI();
+
+                const btn = document.getElementById(isVideo ? 'btnCamToggle' : 'btnMicToggle');
+
+                if(!isVideo && track.enabled) {
+                    if(ytPlayer && ytPlayer.setVolume) ytPlayer.setVolume(100);
+                    if(nativeVideo) nativeVideo.volume = 1.0;
+                }
+
+                if(!track.enabled) btn.classList.add('off'); else btn.classList.remove('off');
+                showToast(t === 'video' ? (track.enabled ? 'Câmera Ativada' : 'Câmera Desativada') : (track.enabled ? 'Microfone Ativado' : 'Microfone Desativado'));
+
+                const audioTrack = myStream.getAudioTracks()[0];
+                const videoTrack = myStream.getVideoTracks()[0];
+                sendData({ type: 'media_state', video: videoTrack.enabled, audio: audioTrack.enabled });
+            }
+        }
+
+        function updateLocalMediaUI() {
+            if(isScreenSharing) {
+                document.getElementById('localMediaOff').style.display = 'none';
+                return;
+            }
+
+            const videoTrack = myStream ? myStream.getVideoTracks()[0] : null;
+            const audioTrack = myStream ? myStream.getAudioTracks()[0] : null;
+
+            const isVideoEnabled = videoTrack ? videoTrack.enabled : isVideoOn;
+            const isAudioEnabled = audioTrack ? audioTrack.enabled : isAudioOn;
+
+            const localOffOverlay = document.getElementById('localMediaOff');
+
+            if(!isVideoEnabled && !isAudioEnabled) {
+                localOffOverlay.style.display = 'flex';
+                localOffOverlay.innerHTML = `<i class="fa-solid fa-video-slash"></i>
+                    <span>Câmera e Microfone Desligados</span>
+                    <span style="font-size:0.7rem; color:#888; margin-top:5px;">Ligue nas opções acima</span>`;
+            } else if (!isVideoEnabled) {
+                 localOffOverlay.style.display = 'flex';
+                 localOffOverlay.innerHTML = `<i class="fa-solid fa-video-slash"></i>
+                    <span>Câmera Desligada</span>
+                    <span style="font-size:0.7rem; color:#888; margin-top:5px;">Microfone está ligado</span>`;
+            } else {
+                localOffOverlay.style.display = 'none';
+            }
+        }
+
+        // --- CORREÇÃO FUNÇÃO SPEAK: Implementa seleção de voz aleatória em pt-BR ---
+        function speak(text) {
+            if (!synth) return;
+            const textToSpeak = text.replace(/<img.*?src=".*?".*?>/gi, ' emoji ');
+            const utterance = new SpeechSynthesisUtterance(textToSpeak);
+            const voices = synth.getVoices();
+
+            // 1. Filtra vozes em português do Brasil
+            const ptBrVoices = voices.filter(voice => voice.lang.includes('pt-BR') || voice.lang.includes('pt_BR'));
+
+            // 2. Seleciona uma voz aleatória
+            if (ptBrVoices.length > 0) {
+                const randomVoice = ptBrVoices[Math.floor(Math.random() * ptBrVoices.length)];
+                utterance.voice = randomVoice;
+            } else {
+                // Fallback se nenhuma voz pt-BR for encontrada
+                utterance.lang = 'pt-BR'; 
+            }
+
+            utterance.volume = ttsVolume;
+            utterance.rate = 1.1;
+            utterance.pitch = 1;
+            synth.cancel();
+            synth.speak(utterance);
+        }
+        // --- FIM CORREÇÃO FUNÇÃO SPEAK ---
+
+        document.addEventListener('visibilitychange', async () => { if (wakeLock !== null && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); });
+    </script>
+</body>
+</html>
